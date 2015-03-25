@@ -118,7 +118,8 @@ JOHN_OBJS = \
 	undrop.o \
 	regex.o pp.o \
 	c3_fmt.o \
-	unique.o putty2john.o gpg2john.o memdbg.o
+	unique.o putty2john.o gpg2john.o memdbg.o \
+	pomelo.o
 
 OCL_OBJS = common-opencl.o opencl_autotune.o
 
@@ -451,6 +452,8 @@ path.o:	path.c autoconfig.h misc.h params.h memory.h path.h memdbg.h
 pfx2john.o:	pfx2john.c jumbo.h common.h arch.h params.h memdbg.h
 
 pkzip.o:	pkzip.c arch.h misc.h common.h memory.h formats.h pkzip.h memdbg.h
+
+pomelo.o:	pomelo.h pomelo.c
 
 putty2john.o:	putty2john.c autoconfig.h memory.h jumbo.h memdbg.h
 
