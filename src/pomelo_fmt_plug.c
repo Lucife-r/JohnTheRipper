@@ -39,15 +39,16 @@ john_register_one(&fmt_pomelo);
 #define BINARY_SIZE			257
 //length + 256
 //20
-#define BINARY_ALIGN			4
-#define SALT_SIZE			32	/* length + type + 62 chars */
+#define BINARY_ALIGN			1
+#define SALT_SIZE			32	
 
 #define SALT_ALIGN			1
 
 #define MIN_KEYS_PER_CRYPT		1
 #define MAX_KEYS_PER_CRYPT		1
 
-#define OMP_SCALE 500
+#define OMP_SCALE 16
+
 
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
@@ -77,7 +78,7 @@ static int length_salt;
 static int m_cost;
 static int t_cost;
 
-void char_to_bin(char *in, int char_length, char *bin)
+static void char_to_bin(char *in, int char_length, char *bin)
 {
 	int i;
 	for (i = 0; i < char_length; i += 2) {
@@ -96,7 +97,7 @@ void char_to_bin(char *in, int char_length, char *bin)
 	}
 }
 
-void pomelo_init(struct fmt_main *self)
+static void init(struct fmt_main *self)
 {
 #ifdef _OPENMP
 	int omp_t = omp_get_max_threads();
@@ -112,7 +113,7 @@ void pomelo_init(struct fmt_main *self)
 	memset(crypted, 0, self->params.max_keys_per_crypt * (BINARY_SIZE));
 }
 
-void pomelo_done(void)
+static void done(void)
 {
 	free(saved_key);
 	free(crypted);
@@ -151,7 +152,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	return 1;
 }
 
-static void *get_binary(char *ciphertext)
+static void *binary(char *ciphertext)
 {
 	char *ii;
 	static char out[BINARY_SIZE];
@@ -164,11 +165,12 @@ static void *get_binary(char *ciphertext)
 	return out;
 }
 
-static void *get_salt(char *ciphertext)
+static void *salt(char *ciphertext)
 {
 	static char salt[SALT_SIZE + 3];
 	char *i = ciphertext + 8;
 	char *last_dollar = strrchr(ciphertext, '$');
+        memset(salt, 0, sizeof(salt));
 	memcpy(salt + 2, i, last_dollar - i);
 	salt[0] = (char)(strlen(last_dollar + 1) / 2);
 	salt[1] = (char)(last_dollar - i);
@@ -350,14 +352,14 @@ struct fmt_main fmt_pomelo = {
 		    {NULL},
 #endif
 	    tests}, {
-		    pomelo_init,
-		    pomelo_done,
+		    init,
+		    done,
 		    fmt_default_reset,
 		    fmt_default_prepare,
 		    valid,
 		    fmt_default_split,
-		    get_binary,
-		    get_salt,
+		    binary,
+		    salt,
 #if FMT_MAIN_VERSION > 11
 		    {NULL},
 #endif
