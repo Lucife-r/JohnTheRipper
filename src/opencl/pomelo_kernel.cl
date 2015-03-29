@@ -1,7 +1,8 @@
 // PHC submission:  POMELO v2  
 // Designed by:     Hongjun Wu (Email: wuhongjun@gmail.com)  
-// This code was written by Hongjun Wu on Jan 31, 2015.  
-// This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on March 25,2015.
+// This code was written by Hongjun Wu on Jan 31, 2015. 
+// This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on March 29,2015. 
+
 
 // This codes gives the C implementation of POMELO on 64-bit platform (little-endian) 
 
@@ -10,11 +11,9 @@
 // For the machine today, it is recommended that: 5 <= t_cost + m_cost <= 25;   
 // one may use the parameters: m_cost = 15; t_cost = 0; (256 MegaByte memory)
 
-
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <string.h>
+#define BINARY_SIZE             257
+#define SALT_SIZE		32
+#define MEM_SIZE                131072
 
 #define F0(i)  {               \
     i0 = ((i) - 0*4)  & mask1; \
@@ -110,54 +109,95 @@
     }                                        \
 }
 
-int PHS(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
 
-int PHS(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
+
+#include "opencl_device_info.h"
+#include "opencl_misc.h"
+
+__kernel void pomelo_crypt_kernel(__global const uchar * in,
+    __global const uint * index,
+    __global char *out,
+    __global const char *salt,
+    __global unsigned short int *rest_salt, __global unsigned long *S)
 {
-	unsigned long long i, j, k, temp;
-	unsigned long long i0, i1, i2, i3, i4;
-	unsigned long long *S;
-	unsigned long long random_number, index_global, index_local;
-	unsigned long long state_size, mask, mask1;
 
-	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 32 bytes. 
-	if (inlen > 256 || saltlen > 64 || outlen > 256 || inlen < 0 ||
-	    saltlen < 0 || outlen < 0)
-		return 1;
+	uint gid;
 
-	//Step 1: Initialize the state S          
-	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (unsigned long long *)malloc(state_size);
+	unsigned long i, j, temp, y;
+
+	unsigned long i0, i1, i2, i3, i4;
+
+	unsigned long random_number, index_global, index_local;
+	unsigned long state_size, mask, mask1;
+
+
+	size_t outlen, saltlen;
+	unsigned int m_cost, t_cost;
+
+	uint base, inlen;
+
+	gid = get_global_id(0);
+
+	out += gid * BINARY_SIZE;
+
+
+	base = index[gid];
+	inlen = index[gid + 1] - base;
+
+	outlen = rest_salt[0];
+	saltlen = rest_salt[1];
+	t_cost = rest_salt[2];
+	m_cost = rest_salt[3];
+
+
+	in += base;
+
+	S = (__global unsigned long *)((MEM_SIZE * gid +
+		((__global unsigned char *)S)));
+
+
+	if (inlen > 256 || saltlen > 64 || outlen > 256)
+		return;
+
+	state_size = 1ULL << (13 + m_cost);	//m_cost=3 is max
+	if (state_size > MEM_SIZE)
+		return;
+
+
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
-	mask1 = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/8; 
+	mask1 = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/8;
+
+
 
 	//Step 2: Load the password, salt, input/output sizes into the state S
 	for (i = 0; i < inlen; i++)
-		((unsigned char *)S)[i] = ((unsigned char *)in)[i];	// load password into S
+		((__global unsigned char *)S)[i] = in[i];	// load password into S
 	for (i = 0; i < saltlen; i++)
-		((unsigned char *)S)[inlen + i] = ((unsigned char *)salt)[i];	// load salt into S
+		((__global unsigned char *)S)[inlen + i] = salt[i];	// load salt into S
 	for (i = inlen + saltlen; i < 384; i++)
-		((unsigned char *)S)[i] = 0;
-	((unsigned char *)S)[384] = inlen & 0xff;	// load password length (in bytes) into S;
-	((unsigned char *)S)[385] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
-	((unsigned char *)S)[386] = saltlen;	// load salt length (in bytes) into S;
-	((unsigned char *)S)[387] = outlen & 0xff;	// load output length (in bytes into S)
-	((unsigned char *)S)[388] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
-	((unsigned char *)S)[389] = 0;
-	((unsigned char *)S)[390] = 0;
-	((unsigned char *)S)[391] = 0;
+		((__global unsigned char *)S)[i] = 0;
+	((__global unsigned char *)S)[384] = inlen & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[385] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[386] = saltlen;	// load salt length (in bytes) into S;
+	((__global unsigned char *)S)[387] = outlen & 0xff;	// load output length (in bytes into S)
+	((__global unsigned char *)S)[388] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
+	((__global unsigned char *)S)[389] = 0;
+	((__global unsigned char *)S)[390] = 0;
+	((__global unsigned char *)S)[391] = 0;
 
-	((unsigned char *)S)[392] = 1;
-	((unsigned char *)S)[393] = 1;
+	((__global unsigned char *)S)[392] = 1;
+	((__global unsigned char *)S)[393] = 1;
+
+
 	for (i = 394; i < 416; i++)
-		((unsigned char *)S)[i] =
-		    ((unsigned char *)S)[i - 1] + ((unsigned char *)S)[i - 2];
+		((__global unsigned char *)S)[i] =
+		    ((__global unsigned char *)S)[i - 1] +
+		    ((__global unsigned char *)S)[i - 2];
+
 
 	//Step 3: Expand the data into the whole state  
-	for (i = 13 * 4; i < (1ULL << (10 + m_cost)); i = i + 4)
+	y = (1ULL << (10 + m_cost));
+	for (i = 13 * 4; i < y; i = i + 4)
 		F0(i);
 
 	//Step 4: Update the state using function G  
@@ -175,63 +215,10 @@ int PHS(void *out, size_t outlen, const void *in, size_t inlen,
 		F(i);
 
 	//Step 7: Generate the output   
-	memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
-	memset(S, 0, state_size);	// clear the memory 
-	free(S);		// free the memory
-
-	return 0;
-}
-
-void bin_to_char(unsigned char *bin, int bin_length, unsigned char *out)
-{
-	int i;
-	for (i = 0; i < bin_length; i++) {
-		out[i * 2] = (bin[i] >> 4);
-		out[i * 2 + 1] = (bin[i]) << 4;
-		out[i * 2 + 1] = out[i * 2 + 1] >> 4;
-		if (out[i * 2] >= 10)
-			out[i * 2] += 55;
-		else
-			out[i * 2] += 48;
-		if (out[i * 2 + 1] >= 10)
-			out[i * 2 + 1] += 55;
-		else
-			out[i * 2 + 1] += 48;
+	//memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
+	for (i = 0; i < outlen; i++) {
+		out[i + 1] =
+		    ((__global unsigned char *)S)[state_size - outlen + i];
 	}
-}
-
-void char_to_bin(char *in, int char_length, char *bin)
-{
-	int i;
-	for (i = 0; i < char_length; i += 2) {
-		char a = in[i];
-		char b = in[i + 1];
-		if (a >= 60)
-			a -= 55;
-		else
-			a -= 48;
-		if (b >= 60)
-			b -= 55;
-		else
-			b -= 48;
-		bin[i / 2] = a << 4;
-		bin[i / 2] += b;
-	}
-}
-
-
-int main(int argc, char **argv)
-{
-	if (argc < 6)
-		return 1;
-	char *out = malloc(1000);
-	char *cout = malloc(2000);
-	PHS(out, atoi(argv[3]), argv[1], strlen(argv[1]), argv[2],
-	    strlen(argv[2]), atoi(argv[4]), atoi(argv[5]));
-	bin_to_char(out, atoi(argv[3]), cout);
-	char *k = malloc(2000);
-	sprintf(k, "$POMELO$%d$%d$%s$%s\n", atoi(argv[4]), atoi(argv[5]),
-	    argv[2], cout);
-	printf(k);
-	return 0;
+	out[0] = (char)outlen;
 }
