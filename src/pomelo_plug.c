@@ -82,3 +82,36 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	return 0;
 }
+
+
+static void bin_to_char(unsigned char *bin, int bin_length, unsigned char *out)
+{
+	int i;
+	for (i = 0; i < bin_length; i++) {
+		out[i * 2] = (bin[i] >> 4);
+		out[i * 2 + 1] = (bin[i]) << 4;
+		out[i * 2 + 1] = out[i * 2 + 1] >> 4;
+		if (out[i * 2] >= 10)
+			out[i * 2] += 55;
+		else
+			out[i * 2] += 48;
+		if (out[i * 2 + 1] >= 10)
+			out[i * 2 + 1] += 55;
+		else
+			out[i * 2 + 1] += 48;
+	}
+}
+
+
+void POMELO_gen(void *out, size_t outlen, const void *in, size_t inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
+{
+	char *m = malloc(512);
+	char *cout = malloc(1024);
+	POMELO(m, outlen, in, inlen, salt, saltlen, t_cost, m_cost);
+	bin_to_char(m, outlen, cout);
+
+	sprintf(out, "$POMELO$%d$%d$%s$%s\n", t_cost, m_cost, salt, cout);
+	free(m);
+	free(cout);
+}

@@ -20,7 +20,7 @@ john_register_one(&fmt_pomelo);
 #include "pomelo.h"
 #include "memdbg.h"
 #ifdef _OPENMP
-#include "omp.h"
+#include <omp.h>
 #endif
 
 #define FORMAT_LABEL			"pomelo"
@@ -30,7 +30,7 @@ john_register_one(&fmt_pomelo);
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
 
-#define PLAINTEXT_LENGTH		100
+#define PLAINTEXT_LENGTH		125
 //256
 //maks len word
 #define CIPHERTEXT_LENGTH		512
@@ -40,7 +40,7 @@ john_register_one(&fmt_pomelo);
 //length + 256
 //20
 #define BINARY_ALIGN			1
-#define SALT_SIZE			32	
+#define SALT_SIZE			32
 
 #define SALT_ALIGN			1
 
@@ -170,7 +170,7 @@ static void *salt(char *ciphertext)
 	static char salt[SALT_SIZE + 3];
 	char *i = ciphertext + 8;
 	char *last_dollar = strrchr(ciphertext, '$');
-        memset(salt, 0, sizeof(salt));
+	memset(salt, 0, sizeof(salt));
 	memcpy(salt + 2, i, last_dollar - i);
 	salt[0] = (char)(strlen(last_dollar + 1) / 2);
 	salt[1] = (char)(last_dollar - i);
