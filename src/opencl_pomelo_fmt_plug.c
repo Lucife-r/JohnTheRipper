@@ -6,6 +6,8 @@
  * Based on opencl_mysqlsha1_fmt_plug.c
  */
 
+extern struct options_main options;
+
 #ifdef HAVE_OPENCL
 
 #if FMT_EXTERNS_H
@@ -79,8 +81,8 @@ static short unsigned int T_COST;
 
 
 static struct fmt_tests tests[] = {
-	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
-	{"$POMELO$2$2$salt$CBA3E72A1F3CAD74AE0E33F353787E82E1D808C65908B2EA57BA5BDD435D3BC645937A1772D1AA18D91D7164616B010810C359B04F4FFA58E60C04C6B8A095DE4500C18CD815A8960E54B0777A3279485EC559BE34D5DBFBF2A66BA61F386FC8896A18D8", "pass"},
+	{NULL},
+        {NULL},
 	{NULL}
 };
 
@@ -88,6 +90,8 @@ static char *saved_key;
 
 static int length_cipher;
 static int length_salt;
+
+static struct fmt_main *self;
 
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
@@ -281,42 +285,77 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	return 1;
 }
 
+static void reset(struct db_main *db) {
+        if (!db) {
+		char build_opts[128];
+	        size_t gws_limit;
+		
+		MEM_SIZE = 1ULL << (10 + M_COST);	//13 for char, 10 for long 
 
-static void init(struct fmt_main *self)
+
+		sprintf(build_opts,
+	    	"-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%d -DM_COST=%d -DT_COST=%d",
+	    	BINARY_SIZE, SALT_SIZE, MEM_SIZE, M_COST, T_COST);
+
+		opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
+
+		// Current key_idx can only hold 26 bits of offset so
+		// we can't reliably use a GWS higher than 4M or so.
+		gws_limit = MIN((1 << 26) * 4 / (MEM_SIZE * 8),
+	    	get_max_mem_alloc_size(gpu_id) / (MEM_SIZE * 8));
+
+
+		// create kernel to execute
+		crypt_kernel =
+	    	clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
+		HANDLE_CLERROR(ret_code,
+	    	"Error creating kernel. Double-check kernel name?");
+
+		printf("get_max_mem_alloc_size=%d\n",get_max_mem_alloc_size);		//temporary
+	
+		//Initialize openCL tuning (library) for this format.
+		opencl_init_auto_setup(SEED, 0, NULL,
+	    	warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8 * 2, 0);
+
+		//Auto tune execution from shared/included code.
+		autotune_run(self, 1, 100, 1000);
+        }
+}
+
+static void init(struct fmt_main *_self)
 {
-	char build_opts[128];
-	size_t gws_limit;
+        static char gen_test[2][600];
+        static char gen_pass[2][20];
+        char gen_salt[2][20];
+        int gen_out[2];
+        int i;
+        
+ 	self=_self;
+	T_COST=options.t_cost;
+        M_COST=options.m_cost;
+        
+        //generate hashes
+        gen_out[0]=100;
+        gen_out[1]=256;
 
-	M_COST = 2;
-	T_COST = 2;
-	MEM_SIZE = 1ULL << (10 + M_COST);	//13 for char, 10 for long 
+        sprintf(gen_pass[0],"admin1");
+        sprintf(gen_pass[1],"pass");
 
+        sprintf(gen_salt[0],"salt");
+        sprintf(gen_salt[1],"s");
 
-	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%d -DM_COST=%d -DT_COST=%d",
-	    BINARY_SIZE, SALT_SIZE, MEM_SIZE, M_COST, T_COST);
+        memset(gen_test[0],0,sizeof(gen_test[0]));
+	memset(gen_test[1],1,sizeof(gen_test[1]));
+        POMELO_gen(gen_test[0],gen_out[0],gen_pass[0],strlen(gen_pass[0]),gen_salt[0],strlen(gen_salt[0]),T_COST,M_COST);
+        POMELO_gen(gen_test[1],gen_out[1],gen_pass[1],strlen(gen_pass[1]),gen_salt[1],strlen(gen_salt[1]),T_COST,M_COST);
 
-	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
+        
 
-	// Current key_idx can only hold 26 bits of offset so
-	// we can't reliably use a GWS higher than 4M or so.
-	gws_limit = MIN((1 << 26) * 4 / (MEM_SIZE * 8),
-	    get_max_mem_alloc_size(gpu_id) / (MEM_SIZE * 8));
-
-
-	// create kernel to execute
-	crypt_kernel =
-	    clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel. Double-check kernel name?");
-
-	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8 * 2, 0);
-
-	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 100, 1000);
-
+ 	for(i=0;i<2;i++)
+        {
+           self->params.tests[i].ciphertext=gen_test[i];
+           self->params.tests[i].plaintext=gen_pass[i];
+        }
 }
 
 static void clear_keys(void)
@@ -483,6 +522,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
 
+	printf("crypt all count=%d gws=%d memory=%llu\n",count,global_work_size,MEM_SIZE*count*8);//temporary
 
 	global_work_size =
 	    local_work_size ? (count + local_work_size -
@@ -587,14 +627,14 @@ struct fmt_main fmt_opencl_pomelo = {
 		    SALT_ALIGN,
 		    MIN_KEYS_PER_CRYPT,
 		    MAX_KEYS_PER_CRYPT,
-		    FMT_CASE | FMT_8_BIT,
+		    FMT_CASE | FMT_8_BIT | T_COST_NEEDED | M_COST_NEEDED,
 #if FMT_MAIN_VERSION > 11
 		    {NULL},
 #endif
 	    tests}, {
 		    init,
 		    done,
-		    fmt_default_reset,
+		    reset,
 		    fmt_default_prepare,
 		    valid,
 		    fmt_default_split,

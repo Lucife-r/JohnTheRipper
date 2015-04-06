@@ -72,6 +72,13 @@ struct db_salt;
  * ones that has actual collisions (eg. oldoffice).  The latter group
  * of formats may instead be run with --keep-guessing if/when wanted.
  */
+
+/*comment*/
+#define T_COST_NEEDED			0x00000010
+
+/*comment*/
+#define M_COST_NEEDED			0x00000020
+
 #define FMT_NOT_EXACT			0x00000100
 /*
  * this format uses a dynamic sized salt, and its salt structure

@@ -1,6 +1,7 @@
 // PHC submission:  POMELO v2  
 // Designed by:     Hongjun Wu (Email: wuhongjun@gmail.com)  
 // This code was written by Hongjun Wu on Jan 31, 2015.  
+// This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on April.
 
 // This codes gives the C implementation of POMELO on 64-bit platform (little-endian) 
 
@@ -111,7 +112,7 @@ void POMELO_gen(void *out, size_t outlen, const void *in, size_t inlen,
 	POMELO(m, outlen, in, inlen, salt, saltlen, t_cost, m_cost);
 	bin_to_char(m, outlen, cout);
 
-	sprintf(out, "$POMELO$%d$%d$%s$%s\n", t_cost, m_cost, salt, cout);
+	sprintf(out, "$POMELO$%d$%d$%s$%s", t_cost, m_cost, salt, cout);
 	free(m);
 	free(cout);
 }
