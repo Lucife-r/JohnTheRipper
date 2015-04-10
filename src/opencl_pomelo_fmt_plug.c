@@ -86,7 +86,6 @@ static struct fmt_tests tests[] = {
 
 static char *saved_key;
 
-static int length_cipher;
 static int length_salt;
 
 /* ------- Helper functions ------- */
@@ -293,7 +292,7 @@ static void init(struct fmt_main *self)
 
 
 	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%d -DM_COST=%d -DT_COST=%d",
+	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%llu -DM_COST=%d -DT_COST=%d",
 	    BINARY_SIZE, SALT_SIZE, MEM_SIZE, M_COST, T_COST);
 
 	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
