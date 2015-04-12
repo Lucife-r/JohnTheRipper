@@ -23,9 +23,16 @@ john_register_one(&fmt_pomelo);
 #include <omp.h>
 #endif
 
-#define FORMAT_LABEL			"pomelo"
+#define FORMAT_LABEL			"POMELO"
 #define FORMAT_NAME			"Generic pomelo"
-#define ALGORITHM_NAME			"Pomelo"
+
+#ifdef __AVX2__
+#define ALGORITHM_NAME			"AVX2"
+#elif defined(SIMD_COEF_64)
+#define ALGORITHM_NAME			"SSE2"
+#else
+#define ALGORITHM_NAME			" "
+#endif
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -237,27 +244,27 @@ static void *get_salt(char *ciphertext)
 {
 	static char salt[SALT_SIZE + 5];
 	char *i = ciphertext + 8;
-        char *first_dollar,*second_dollar;
+	char *first_dollar, *second_dollar;
 	char *last_dollar = strrchr(ciphertext, '$');
-        char ct_cost,cm_cost;
+	char ct_cost, cm_cost;
 
 	memset(salt, 0, sizeof(salt));
-	
+
 	salt[0] = (char)(strlen(last_dollar + 1) / 2);
 	salt[1] = (char)(last_dollar - i);
 	salt[last_dollar - i + 4] = 0;
 	salt[SALT_SIZE + 4] = 0;
-        first_dollar = strchr(i, '$');
-        second_dollar=strchr(first_dollar+1,'$');
+	first_dollar = strchr(i, '$');
+	second_dollar = strchr(first_dollar + 1, '$');
 
-        ct_cost=atoi(i);
+	ct_cost = atoi(i);
 
-        cm_cost=atoi(first_dollar+1);
-        
-	salt[2]=ct_cost;
-        salt[3]=cm_cost;	
-	
-	memcpy(salt + 4, second_dollar+1, salt[1]);
+	cm_cost = atoi(first_dollar + 1);
+
+	salt[2] = ct_cost;
+	salt[3] = cm_cost;
+
+	memcpy(salt + 4, second_dollar + 1, salt[1]);
 
 	return salt;
 }
@@ -273,8 +280,8 @@ static void set_salt(void *salt)
 	t_cost = o[2];
 	m_cost = o[3];
 
-	length_salt = strlen(i+4);
-	memset(saved_salt,0,sizeof(saved_salt));
+	length_salt = strlen(i + 4);
+	memset(saved_salt, 0, sizeof(saved_salt));
 	memcpy(saved_salt, i, length_salt);
 	saved_salt[length_salt] = 0;
 }
@@ -304,12 +311,14 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 #endif
 	for (i = 0; i < count; i++) {
 		crypted[i * BINARY_SIZE] = (char)length_cipher;
-                #ifdef SIMD_COEF_64
-                POMELO_SSE2
-                #else
+#ifdef __AVX2__
+		POMELO_AVX2
+#elif defined(SIMD_COEF_64)
+		POMELO_SSE2
+#else
 		POMELO
-                #endif
-               (crypted + 1 + i * BINARY_SIZE, length_cipher,
+#endif
+		    (crypted + 1 + i * BINARY_SIZE, length_cipher,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
 		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt,
 		    length_salt, t_cost, m_cost);
@@ -353,13 +362,13 @@ static int cmp_one(void *binary, int index)
 #if FMT_MAIN_VERSION > 11
 static unsigned int tunable_cost_N(void *salt)
 {
-	char *str=salt;
+	char *str = salt;
 	return str[2];
 }
 
 static unsigned int tunable_cost_r(void *salt)
 {
-	char *str=salt;
+	char *str = salt;
 	return str[3];
 }
 
@@ -386,9 +395,8 @@ struct fmt_main fmt_pomelo = {
 		    FMT_CASE | FMT_8_BIT,
 #if FMT_MAIN_VERSION > 11
 		    {
-			"N",
-			"r"
-		    },
+				"N",
+			"r"},
 #endif
 	    tests}, {
 		    init,
@@ -401,9 +409,8 @@ struct fmt_main fmt_pomelo = {
 		    get_salt,
 #if FMT_MAIN_VERSION > 11
 		    {
-			tunable_cost_N,
-			tunable_cost_r
-		    },
+				tunable_cost_N,
+			tunable_cost_r},
 #endif
 		    fmt_default_source,
 		    {
