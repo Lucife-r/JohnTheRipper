@@ -170,7 +170,6 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 7: Generate the output   
 	memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
-	memset(S, 0, state_size);	// clear the memory 
 	free(S);		// free the memory
 
 	return 0;
@@ -204,7 +203,8 @@ void POMELO_gen(void *out, size_t outlen, const void *in, size_t inlen,
 	POMELO(m, outlen, in, inlen, salt, saltlen, t_cost, m_cost);
 	bin_to_char(m, outlen, cout);
 
-	sprintf(out, "$POMELO$%d$%d$%s$%s\n", t_cost, m_cost, (char *)salt, cout);
+	sprintf(out, "$POMELO$%d$%d$%s$%s\n", t_cost, m_cost, (char *)salt,
+	    cout);
 	free(m);
 	free(cout);
 }

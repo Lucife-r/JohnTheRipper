@@ -10,19 +10,21 @@
 // one may use the parameters: m_cost = 15; t_cost = 0; (256 MegaByte memory)    
 
 
-#include <stdlib.h>
-#include <string.h>  
-#include <immintrin.h>
-#include "pomelo.h" 
+#include "pomelo.h"
 
 #ifdef SIMD_COEF_64
 
-#define ADD128(x,y)       _mm_add_epi64((x), (y))   
-#define XOR128(x,y)       _mm_xor_si128((x),(y))     /*XOR(x,y) = x ^ y, where x and y are two 128-bit word*/
-#define OR128(x,y)        _mm_or_si128((x),(y))      /*OR(x,y)  = x | y, where x and y are two 128-bit word*/
-#define ROTL128(x,n)      XOR128(_mm_slli_epi64((x), (n)),  _mm_srli_epi64((x),(64-n)))  /*Rotate 2 64-bit unsigned integers in x to the left by n-bit positions*/
-#define SHIFTL128(x,n)    _mm_slli_epi64((x), (n))      
-#define SHIFTL64(x)       _mm_slli_si128(x, 8) 
+#include <stdlib.h>
+#include <string.h>
+#include <immintrin.h>
+
+
+#define ADD128(x,y)       _mm_add_epi64((x), (y))
+#define XOR128(x,y)       _mm_xor_si128((x),(y))	/*XOR(x,y) = x ^ y, where x and y are two 128-bit word */
+#define OR128(x,y)        _mm_or_si128((x),(y))	/*OR(x,y)  = x | y, where x and y are two 128-bit word */
+#define ROTL128(x,n)      XOR128(_mm_slli_epi64((x), (n)),  _mm_srli_epi64((x),(64-n)))	/*Rotate 2 64-bit unsigned integers in x to the left by n-bit positions */
+#define SHIFTL128(x,n)    _mm_slli_epi64((x), (n))
+#define SHIFTL64(x)       _mm_slli_si128(x, 8)
 #define SHIFTR64(x)       _mm_srli_si128(x, 8)
 
 // Function F0 update the state using a nonlinear feedback shift register  
@@ -96,63 +98,76 @@
         S[index_global+1]= ADD128(S[index_global+1],SHIFTL128(S[i0+1],3));             \
         random_number  = ((unsigned long long*)S)[i3<<1];                                                        \
     }                                                                                     \
-}       
+}
 
 
-int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
+int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
 {
-    unsigned long long i,j;
-    __m128i temp;          
-    unsigned long long i0,i1,i2,i3,i4;
-    __m128i *S;  
-    unsigned long long random_number, index_global, index_local; 
-    unsigned long long state_size, mask, mask1;  
+	unsigned long long i, j;
+	__m128i temp;
+	unsigned long long i0, i1, i2, i3, i4;
+	__m128i *S;
+	unsigned long long random_number, index_global, index_local;
+	unsigned long long state_size, mask, mask1;
 
-    //check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 32 bytes. 
-    if (inlen > 256 || saltlen > 64 || outlen > 256 || inlen < 0 || saltlen < 0 || outlen < 0) return 1;  
+	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 32 bytes. 
+	if (inlen > 256 || saltlen > 64 || outlen > 256 || inlen < 0 ||
+	    saltlen < 0 || outlen < 0)
+		return 1;
 
-    //Step 1: Initialize the state S          
-    state_size = 1ULL << (13+m_cost);   // state size is 2**(13+m_cost) bytes 
-    S = (__m128i *)malloc(state_size); 
-    mask  = (1ULL << (8+m_cost)) - 1;   // mask is used for modulation: modulo size_size/32; 
-    mask1 = (1ULL << (9+m_cost)) - 1;   // mask is used for modulation: modulo size_size/16; 
+	//Step 1: Initialize the state S          
+	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
+	S = (__m128i *) malloc(state_size);
+	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
+	mask1 = (1ULL << (9 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/16; 
 
-    //Step 2: Load the password, salt, input/output sizes into the state S
-    for (i = 0; i < inlen; i++)   ((unsigned char*)S)[i] = ((unsigned char*)in)[i];         // load password into S
-    for (i = 0; i < saltlen; i++) ((unsigned char*)S)[inlen+i] = ((unsigned char*)salt)[i]; // load salt into S
-    for (i = inlen+saltlen; i < 384; i++) ((unsigned char*)S)[i] = 0;      
-    ((unsigned char*)S)[384] = inlen & 0xff;         // load password length (in bytes) into S;
-    ((unsigned char*)S)[385] = (inlen >> 8) & 0xff;  // load password length (in bytes) into S;
-    ((unsigned char*)S)[386] = saltlen;              // load salt length (in bytes) into S;
-    ((unsigned char*)S)[387] = outlen & 0xff;        // load output length (in bytes into S)
-    ((unsigned char*)S)[388] = (outlen >> 8) & 0xff; // load output length (in bytes into S) 
-    ((unsigned char*)S)[389] = 0; 
-    ((unsigned char*)S)[390] = 0; 
-    ((unsigned char*)S)[391] = 0;
+	//Step 2: Load the password, salt, input/output sizes into the state S
+	for (i = 0; i < inlen; i++)
+		((unsigned char *)S)[i] = ((unsigned char *)in)[i];	// load password into S
+	for (i = 0; i < saltlen; i++)
+		((unsigned char *)S)[inlen + i] = ((unsigned char *)salt)[i];	// load salt into S
+	for (i = inlen + saltlen; i < 384; i++)
+		((unsigned char *)S)[i] = 0;
+	((unsigned char *)S)[384] = inlen & 0xff;	// load password length (in bytes) into S;
+	((unsigned char *)S)[385] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
+	((unsigned char *)S)[386] = saltlen;	// load salt length (in bytes) into S;
+	((unsigned char *)S)[387] = outlen & 0xff;	// load output length (in bytes into S)
+	((unsigned char *)S)[388] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
+	((unsigned char *)S)[389] = 0;
+	((unsigned char *)S)[390] = 0;
+	((unsigned char *)S)[391] = 0;
 
-    ((unsigned char*)S)[392] = 1;
-    ((unsigned char*)S)[393] = 1;
-    for (i = 394; i < 416; i++) ((unsigned char*)S)[i] = ((unsigned char*)S)[i-1] + ((unsigned char*)S)[i-2];    
+	((unsigned char *)S)[392] = 1;
+	((unsigned char *)S)[393] = 1;
+	for (i = 394; i < 416; i++)
+		((unsigned char *)S)[i] =
+		    ((unsigned char *)S)[i - 1] + ((unsigned char *)S)[i - 2];
 
-    //Step 3: Expand the data into the whole state  
-    for (i = 13*2; i < (1ULL << (9+m_cost)); i=i+2) F0(i);  
- 
-    //Step 4: Update the state using function G  
-    random_number = 123456789ULL;    
-    for (i = 0; i < (1ULL << (8+m_cost+t_cost)); i=i+64)    G(i,random_number);
+	//Step 3: Expand the data into the whole state  
+	for (i = 13 * 2; i < (1ULL << (9 + m_cost)); i = i + 2)
+		F0(i);
 
-    //Step 5: Update the state using function H     
-    for (i = 1ULL << (8+m_cost+t_cost);  i < (1ULL << (9+m_cost+t_cost)); i=i+64)  H(i,random_number);
+	//Step 4: Update the state using function G  
+	random_number = 123456789ULL;
+	for (i = 0; i < (1ULL << (8 + m_cost + t_cost)); i = i + 64)
+		G(i, random_number);
 
-    //Step 6: Update the state using function F 
-    for (i = 0; i < (1ULL << (9+m_cost)); i=i+2)  F(i);       
+	//Step 5: Update the state using function H     
+	for (i = 1ULL << (8 + m_cost + t_cost);
+	    i < (1ULL << (9 + m_cost + t_cost)); i = i + 64)
+		H(i, random_number);
 
-    //Step 7: Generate the output   
-    memcpy(out, ((unsigned char*)S)+state_size-outlen, outlen);
-    memset(S, 0, state_size);  // clear the memory 
-    free(S);                   // free the memory
+	//Step 6: Update the state using function F 
+	for (i = 0; i < (1ULL << (9 + m_cost)); i = i + 2)
+		F(i);
 
-    return 0;
+	//Step 7: Generate the output   
+	memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
+
+	free(S);		// free the memory
+
+	return 0;
 }
 
 #endif
