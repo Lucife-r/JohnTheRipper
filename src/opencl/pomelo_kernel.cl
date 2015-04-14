@@ -11,7 +11,6 @@
 // For the machine today, it is recommended that: 5 <= t_cost + m_cost <= 25;   
 // one may use the parameters: m_cost = 15; t_cost = 0; (256 MegaByte memory)
 
-// BINARY_SIZE, SALT_SIZE, MEM_SIZE, T_COST and M_COST is passed with -D during build
 
 #define F0(i)  {               \
     i0 = ((i) - 0*4)  & mask1; \
@@ -19,14 +18,14 @@
     i2 = ((i) - 3*4)  & mask1; \
     i3 = ((i) - 7*4)  & mask1; \
     i4 = ((i) - 13*4) & mask1; \
-    S[i0+1] = ((S[i1+0] ^ S[i2+0]) + S[i3+0]) ^ S[i4+0];         \
-    S[i0+2] = ((S[i1+1] ^ S[i2+1]) + S[i3+1]) ^ S[i4+1];         \
-    S[i0+3] = ((S[i1+2] ^ S[i2+2]) + S[i3+2]) ^ S[i4+2];         \
-    S[i0+0] = ((S[i1+3] ^ S[i2+3]) + S[i3+3]) ^ S[i4+3];         \
-    S[i0+0] = (S[i0+0] << 17) | (S[i0+0] >> 47);  \
-    S[i0+1] = (S[i0+1] << 17) | (S[i0+1] >> 47);  \
-    S[i0+2] = (S[i0+2] << 17) | (S[i0+2] >> 47);  \
-    S[i0+3] = (S[i0+3] << 17) | (S[i0+3] >> 47);  \
+    S[MAP(i0+1)] = ((S[MAP(i1+0)] ^ S[MAP(i2+0)]) + S[MAP(i3+0)]) ^ S[MAP(i4+0)];         \
+    S[MAP(i0+2)] = ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
+    S[MAP(i0+3)] = ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
+    S[MAP(i0+0)] = ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
+    S[MAP(i0+0)] = (S[MAP(i0+0)] << 17) | (S[MAP(i0+0)] >> 47);  \
+    S[MAP(i0+1)] = (S[MAP(i0+1)] << 17) | (S[MAP(i0+1)] >> 47);  \
+    S[MAP(i0+2)] = (S[MAP(i0+2)] << 17) | (S[MAP(i0+2)] >> 47);  \
+    S[MAP(i0+3)] = (S[MAP(i0+3)] << 17) | (S[MAP(i0+3)] >> 47);  \
 }
 
 #define F(i)  {                \
@@ -35,19 +34,19 @@
     i2 = ((i) - 3*4)  & mask1; \
     i3 = ((i) - 7*4)  & mask1; \
     i4 = ((i) - 13*4) & mask1; \
-    S[i0+0] += ((S[i1+0] ^ S[i2+0]) + S[i3+0]) ^ S[i4+0];         \
-    S[i0+1] += ((S[i1+1] ^ S[i2+1]) + S[i3+1]) ^ S[i4+1];         \
-    S[i0+2] += ((S[i1+2] ^ S[i2+2]) + S[i3+2]) ^ S[i4+2];         \
-    S[i0+3] += ((S[i1+3] ^ S[i2+3]) + S[i3+3]) ^ S[i4+3];         \
-    temp = S[i0+3];         \
-    S[i0+3] = S[i0+2];      \
-    S[i0+2] = S[i0+1];      \
-    S[i0+1] = S[i0+0];      \
-    S[i0+0] = temp;         \
-    S[i0+0] = (S[i0+0] << 17) | (S[i0+0] >> 47);  \
-    S[i0+1] = (S[i0+1] << 17) | (S[i0+1] >> 47);  \
-    S[i0+2] = (S[i0+2] << 17) | (S[i0+2] >> 47);  \
-    S[i0+3] = (S[i0+3] << 17) | (S[i0+3] >> 47);  \
+    S[MAP(i0+0)] += ((S[MAP(i1+0)] ^ S[MAP(i2+0)]) + S[MAP(i3+0)]) ^ S[MAP(i4+0)];         \
+    S[MAP(i0+1)] += ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
+    S[MAP(i0+2)] += ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
+    S[MAP(i0+3)] += ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
+    temp = S[MAP(i0+3)];         \
+    S[MAP(i0+3)] = S[MAP(i0+2)];      \
+    S[MAP(i0+2)] = S[MAP(i0+1)];      \
+    S[MAP(i0+1)] = S[MAP(i0+0)];      \
+    S[MAP(i0+0)] = temp;         \
+    S[MAP(i0+0)] = (S[MAP(i0+0)] << 17) | (S[MAP(i0+0)] >> 47);  \
+    S[MAP(i0+1)] = (S[MAP(i0+1)] << 17) | (S[MAP(i0+1)] >> 47);  \
+    S[MAP(i0+2)] = (S[MAP(i0+2)] << 17) | (S[MAP(i0+2)] >> 47);  \
+    S[MAP(i0+3)] = (S[MAP(i0+3)] << 17) | (S[MAP(i0+3)] >> 47);  \
 }
 
 #define G(i,random_number)  {                                                       \
@@ -58,22 +57,22 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-        S[i0+0]       += (S[index_local+0] << 1);                                   \
-        S[i0+1]       += (S[index_local+1] << 1);                                   \
-        S[i0+2]       += (S[index_local+2] << 1);                                   \
-        S[i0+3]       += (S[index_local+3] << 1);                                   \
-        S[index_local+0] += (S[i0+0] << 2); \
-        S[index_local+1] += (S[i0+1] << 2); \
-        S[index_local+2] += (S[i0+2] << 2); \
-        S[index_local+3] += (S[i0+3] << 2); \
-        S[i0+0]       += (S[index_global+0] << 1);                                   \
-        S[i0+1]       += (S[index_global+1] << 1);                                   \
-        S[i0+2]       += (S[index_global+2] << 1);                                   \
-        S[i0+3]       += (S[index_global+3] << 1);                                   \
-        S[index_global+0] += (S[i0+0] << 3); \
-        S[index_global+1] += (S[i0+1] << 3); \
-        S[index_global+2] += (S[i0+2] << 3); \
-        S[index_global+3] += (S[i0+3] << 3); \
+        S[MAP(i0+0)]       += (S[MAP(index_local+0)] << 1);                                   \
+        S[MAP(i0+1)]       += (S[MAP(index_local+1)] << 1);                                   \
+        S[MAP(i0+2)]       += (S[MAP(index_local+2)] << 1);                                   \
+        S[MAP(i0+3)]       += (S[MAP(index_local+3)] << 1);                                   \
+        S[MAP(index_local+0)] += (S[MAP(i0+0)] << 2); \
+        S[MAP(index_local+1)] += (S[MAP(i0+1)] << 2); \
+        S[MAP(index_local+2)] += (S[MAP(i0+2)] << 2); \
+        S[MAP(index_local+3)] += (S[MAP(i0+3)] << 2); \
+        S[MAP(i0+0)]       += (S[MAP(index_global+0)] << 1);                                   \
+        S[MAP(i0+1)]       += (S[MAP(index_global+1)] << 1);                                   \
+        S[MAP(i0+2)]       += (S[MAP(index_global+2)] << 1);                                   \
+        S[MAP(i0+3)]       += (S[MAP(index_global+3)] << 1);                                   \
+        S[MAP(index_global+0)] += (S[MAP(i0+0)] << 3); \
+        S[MAP(index_global+1)] += (S[MAP(i0+1)] << 3); \
+        S[MAP(index_global+2)] += (S[MAP(i0+2)] << 3); \
+        S[MAP(index_global+3)] += (S[MAP(i0+3)] << 3); \
         random_number += (random_number << 2);                                      \
         random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;   \
     }                                                                               \
@@ -87,43 +86,49 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-        S[i0+0]       += (S[index_local+0] << 1);                                   \
-        S[i0+1]       += (S[index_local+1] << 1);                                   \
-        S[i0+2]       += (S[index_local+2] << 1);                                   \
-        S[i0+3]       += (S[index_local+3] << 1);                                   \
-        S[index_local+0] += (S[i0+0] << 2); \
-        S[index_local+1] += (S[i0+1] << 2); \
-        S[index_local+2] += (S[i0+2] << 2); \
-        S[index_local+3] += (S[i0+3] << 2); \
-        S[i0+0]       += (S[index_global+0] << 1);                                   \
-        S[i0+1]       += (S[index_global+1] << 1);                                   \
-        S[i0+2]       += (S[index_global+2] << 1);                                   \
-        S[i0+3]       += (S[index_global+3] << 1);                                   \
-        S[index_global+0] += (S[i0+0] << 3); \
-        S[index_global+1] += (S[i0+1] << 3); \
-        S[index_global+2] += (S[i0+2] << 3); \
-        S[index_global+3] += (S[i0+3] << 3); \
-        random_number  = S[i3];              \
+        S[MAP(i0+0)]       += (S[MAP(index_local+0)] << 1);                                   \
+        S[MAP(i0+1)]       += (S[MAP(index_local+1)] << 1);                                   \
+        S[MAP(i0+2)]       += (S[MAP(index_local+2)] << 1);                                   \
+        S[MAP(i0+3)]       += (S[MAP(index_local+3)] << 1);                                   \
+        S[MAP(index_local+0)] += (S[MAP(i0+0)] << 2); \
+        S[MAP(index_local+1)] += (S[MAP(i0+1)] << 2); \
+        S[MAP(index_local+2)] += (S[MAP(i0+2)] << 2); \
+        S[MAP(index_local+3)] += (S[MAP(i0+3)] << 2); \
+        S[MAP(i0+0)]       += (S[MAP(index_global+0)] << 1);                                   \
+        S[MAP(i0+1)]       += (S[MAP(index_global+1)] << 1);                                   \
+        S[MAP(i0+2)]       += (S[MAP(index_global+2)] << 1);                                   \
+        S[MAP(i0+3)]       += (S[MAP(index_global+3)] << 1);                                   \
+        S[MAP(index_global+0)] += (S[MAP(i0+0)] << 3); \
+        S[MAP(index_global+1)] += (S[MAP(i0+1)] << 3); \
+        S[MAP(index_global+2)] += (S[MAP(i0+2)] << 3); \
+        S[MAP(index_global+3)] += (S[MAP(i0+3)] << 3); \
+        random_number  = S[MAP(i3)];              \
     }                                        \
 }
 
-
+#define MAP(X) ((X)*GID+gid)
+#define MAPCH(X) (((X)/8*GID+gid)*8+(X)%8)
 
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
 
+// BINARY_SIZE, SALT_SIZE, MEM_SIZE, T_COST and M_COST is passed with -D during build
+
 __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
-    __global const char *salt, __global unsigned short int *rest_salt)
+    __global const char *salt, 
+    __global unsigned short int *rest_salt,
+    __global unsigned long *S)
 {
 
 
-	unsigned long S[MEM_SIZE];
+	//unsigned long S[MEM_SIZE];
 
 
 
 	uint gid;
+	uint GID;
 
 	unsigned long i, j, temp, y;
 
@@ -138,7 +143,7 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	uint base, inlen;
 
 	gid = get_global_id(0);
-
+	GID=get_global_size(0);
 
 	out += gid * BINARY_SIZE;
 
@@ -151,12 +156,11 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 
 	in += base;
 
-
 	if (inlen > 256 || saltlen > 64 || outlen > 256)
 		return;
 
 
-	state_size = 1UL << (13 + M_COST);	//m_cost=3 is max
+	state_size = 1UL << (13 + M_COST);	
 
 	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
@@ -165,34 +169,34 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 
 	//Step 2: Load the password, salt, input/output sizes into the state S
 	for (i = 0; i < inlen; i++)
-		((unsigned char *)S)[i] = in[i];	// load password into S
+		((__global unsigned char *)S)[MAPCH(i)] = in[i];	// load password into S
 	for (i = 0; i < saltlen; i++)
-		((unsigned char *)S)[inlen + i] = salt[i];	// load salt into S
+		((__global unsigned char *)S)[MAPCH(inlen + i)] = salt[i];	// load salt into S
 	for (i = inlen + saltlen; i < 384; i++)
-		((unsigned char *)S)[i] = 0;
-	((unsigned char *)S)[384] = inlen & 0xff;	// load password length (in bytes) into S;
-	((unsigned char *)S)[385] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
-	((unsigned char *)S)[386] = saltlen;	// load salt length (in bytes) into S;
-	((unsigned char *)S)[387] = outlen & 0xff;	// load output length (in bytes into S)
-	((unsigned char *)S)[388] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
-	((unsigned char *)S)[389] = 0;
-	((unsigned char *)S)[390] = 0;
-	((unsigned char *)S)[391] = 0;
+		((__global unsigned char *)S)[MAPCH(i)] = 0;
+	((__global unsigned char *)S)[MAPCH(384)] = inlen & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(385)] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(386)] = saltlen;	// load salt length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(387)] = outlen & 0xff;	// load output length (in bytes into S)
+	((__global unsigned char *)S)[MAPCH(388)] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
+	((__global unsigned char *)S)[MAPCH(389)] = 0;
+	((__global unsigned char *)S)[MAPCH(390)] = 0;
+	((__global unsigned char *)S)[MAPCH(391)] = 0;
 
-	((unsigned char *)S)[392] = 1;
-	((unsigned char *)S)[393] = 1;
+	((__global unsigned char *)S)[MAPCH(392)] = 1;
+	((__global unsigned char *)S)[MAPCH(393)] = 1;
 
 
 	for (i = 394; i < 416; i++)
-		((unsigned char *)S)[i] =
-		    ((unsigned char *)S)[i - 1] + ((unsigned char *)S)[i - 2];
-
+		((__global unsigned char *)S)[MAPCH(i)] =
+		    ((__global unsigned char *)S)[MAPCH(i - 1)] + ((__global unsigned char *)S)[MAPCH(i - 2)];
 
 
 	//Step 3: Expand the data into the whole state  
 	y = (1UL << (10 + M_COST));
 	for (i = 13 * 4; i < y; i = i + 4)
 		F0(i);
+
 
 	//Step 4: Update the state using function G  
 	random_number = 123456789UL;
@@ -211,7 +215,7 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	//Step 7: Generate the output   
 	//memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
 	for (i = 0; i < outlen; i++) {
-		out[i + 1] = ((unsigned char *)S)[state_size - outlen + i];
+		out[i + 1] = ((__global unsigned char *)S)[MAPCH(state_size - outlen + i)];
 	}
 	out[0] = (char)outlen;
 }

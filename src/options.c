@@ -236,6 +236,10 @@ static struct opt_entry opt_list[] = {
 	{"crack-status", FLG_CRKSTAT, FLG_CRKSTAT},
 	{"mkpc", FLG_ZERO, 0, 0, OPT_REQ_PARAM,
 		"%u", &options.force_maxkeys},
+	{"t_cost", FLG_ZERO, 0, 0, OPT_REQ_PARAM,
+		"%u", &options.t_cost},        
+	{"m_cost", FLG_ZERO, 0, 0, OPT_REQ_PARAM,
+		"%u", &options.m_cost},
 	{"min-length", FLG_ZERO, 0, 0, OPT_REQ_PARAM,
 		"%u", &options.force_minlength},
 	{"max-length", FLG_ZERO, 0, 0, OPT_REQ_PARAM,
@@ -441,6 +445,8 @@ void opt_print_hidden_usage(void)
 	puts("--prince-case-permute     permute case of first letter");
 	puts("--prince-mmap             memory-map infile (not available when permuting case)");
 	puts("--prince-keyspace         just show total keyspace that would be produced");
+        puts("--t_cost		        specify t_cost for a PHC finalist format");
+        puts("--m_cost		        specify m_cost for a PHC finalist format");
 	puts("                          (disregarding skip and limit)");
 #endif
 	puts("");
@@ -462,6 +468,8 @@ void opt_init(char *name, int argc, char **argv, int show_usage)
 	options.max_run_time = options.status_interval = 0;
 	options.reload_at_save = options.dynamic_bare_hashes_always_valid = 0;
 	options.verbosity = 3;
+        options.t_cost = 0;
+        options.m_cost = 0;
 
 	list_init(&options.passwd);
 

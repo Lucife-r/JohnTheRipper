@@ -6,6 +6,8 @@
  * Based on opencl_mysqlsha1_fmt_plug.c
  */
 
+extern struct options_main options;
+
 #ifdef HAVE_OPENCL
 
 #if FMT_EXTERNS_H
@@ -67,20 +69,20 @@ static char *saved_key;
 static unsigned int *saved_idx, key_idx;
 static size_t key_offset, idx_offset;
 static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_real_salt,
-    cl_saved_rest_salt;
-static cl_mem pinned_key, pinned_idx, pinned_result, pinned_rest_salt,
+    cl_saved_rest_salt,cl_memory;
+static cl_mem pinned_key, pinned_idx, pinned_result, pinned_rest_salt,pinned_memory,
     pinned_real_salt;
 static int partial_output;
 static unsigned short int *saved_rest_salt;
-static char *saved_real_salt, *output;
+static char *saved_real_salt, *output, *memory;
 static unsigned long long int MEM_SIZE;
 static short unsigned int M_COST;
 static short unsigned int T_COST;
 
 
 static struct fmt_tests tests[] = {
-	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
-	{"$POMELO$2$2$salt$CBA3E72A1F3CAD74AE0E33F353787E82E1D808C65908B2EA57BA5BDD435D3BC645937A1772D1AA18D91D7164616B010810C359B04F4FFA58E60C04C6B8A095DE4500C18CD815A8960E54B0777A3279485EC559BE34D5DBFBF2A66BA61F386FC8896A18D8", "pass"},
+	{NULL},
+        {NULL},
 	{NULL}
 };
 
@@ -88,6 +90,8 @@ static char *saved_key;
 
 static int length_cipher;
 static int length_salt;
+
+static struct fmt_main *self;
 
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
@@ -111,6 +115,22 @@ static size_t get_default_workgroup()
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
+        pinned_memory =
+	    clCreateBuffer(context[gpu_id],
+	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+	    MEM_SIZE * gws *8, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
+	cl_memory =
+	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
+	    MEM_SIZE* gws *8, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating device buffer");
+	memory =
+	    clEnqueueMapBuffer(queue[gpu_id], pinned_memory, CL_TRUE,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, MEM_SIZE * gws *8, 0,
+	    NULL, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error mapping memory");
+
+
 	pinned_key =
 	    clCreateBuffer(context[gpu_id],
 	    CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, PLAINTEXT_LENGTH * gws,
@@ -128,6 +148,7 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 
+	
 	cl_saved_key =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_ONLY,
 	    PLAINTEXT_LENGTH * gws, NULL, &ret_code);
@@ -153,6 +174,8 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    clEnqueueMapBuffer(queue[gpu_id], pinned_rest_salt, CL_TRUE,
 	    CL_MAP_READ | CL_MAP_WRITE, 0, 4 * sizeof(unsigned short int), 0,
 	    NULL, NULL, &ret_code);
+
+	HANDLE_CLERROR(ret_code, "Error mapping saved_key");
 	saved_real_salt =
 	    clEnqueueMapBuffer(queue[gpu_id], pinned_real_salt, CL_TRUE,
 	    CL_MAP_READ | CL_MAP_WRITE, 0, SALT_SIZE, 0, NULL, NULL,
@@ -199,7 +222,8 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		(void *)&cl_saved_real_salt), "Error setting argument 3");
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 4, sizeof(cl_mem),
 		(void *)&cl_saved_rest_salt), "Error setting argument 4");
-
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 5, sizeof(cl_mem),
+		(void *)&cl_memory), "Error setting argument 5");
 }
 
 static void release_clobj(void)
@@ -216,9 +240,14 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_rest_salt,
 		saved_rest_salt, 0, NULL, NULL),
 	    "Error Unmapping saved_rest_salt");
+	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_memory,
+		memory, 0, NULL, NULL), "Error Unmapping memory");	
+
 	HANDLE_CLERROR(clFinish(queue[gpu_id]),
 	    "Error releasing memory mappings");
 
+	HANDLE_CLERROR(clReleaseMemObject(pinned_memory),
+	    "Release pinned result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_result),
 	    "Release pinned result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_key),
@@ -237,6 +266,7 @@ static void release_clobj(void)
 	    "Release real salt");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_rest_salt),
 	    "Release rest salt");
+	HANDLE_CLERROR(clReleaseMemObject(cl_memory), "Release memory");
 }
 
 
@@ -281,42 +311,77 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	return 1;
 }
 
+static void reset(struct db_main *db) {
+        if (!db) {
+		char build_opts[128];
+	        size_t gws_limit;
+		
 
-static void init(struct fmt_main *self)
+		sprintf(build_opts,
+	    	"-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%d -DM_COST=%d -DT_COST=%d",
+	    	BINARY_SIZE, SALT_SIZE, MEM_SIZE, M_COST, T_COST);
+
+		opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
+
+		// Current key_idx can only hold 26 bits of offset so
+		// we can't reliably use a GWS higher than 4M or so.
+		gws_limit = MIN((1 << 26) * 4 / (MEM_SIZE * 8),
+	    	get_max_mem_alloc_size(gpu_id) / (MEM_SIZE * 8));
+
+
+		// create kernel to execute
+		crypt_kernel =
+	    	clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
+		HANDLE_CLERROR(ret_code,
+	    	"Error creating kernel. Double-check kernel name?");
+
+		printf("get_max_mem_alloc_size=%d\n",get_max_mem_alloc_size);		//temporary
+	
+		//Initialize openCL tuning (library) for this format.
+		opencl_init_auto_setup(SEED, 0, NULL,
+	    	warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8 * 2, 0);
+
+		//Auto tune execution from shared/included code.
+		autotune_run(self, 1, 100, 1000);
+        }
+}
+
+static void init(struct fmt_main *_self)
 {
-	char build_opts[128];
-	size_t gws_limit;
-
-	M_COST = 2;
-	T_COST = 2;
+        static char gen_test[2][600];
+        static char gen_pass[2][20];
+        char gen_salt[2][20];
+        int gen_out[2];
+        int i;
+        
+ 	self=_self;
+	T_COST=options.t_cost;
+        M_COST=options.m_cost;
 	MEM_SIZE = 1ULL << (10 + M_COST);	//13 for char, 10 for long 
 
+        
+        //generate hashes
+        gen_out[0]=100;
+        gen_out[1]=256;
 
-	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DMEM_SIZE=%d -DM_COST=%d -DT_COST=%d",
-	    BINARY_SIZE, SALT_SIZE, MEM_SIZE, M_COST, T_COST);
+        sprintf(gen_pass[0],"admin1");
+        sprintf(gen_pass[1],"pass");
 
-	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
+        sprintf(gen_salt[0],"salt");
+        sprintf(gen_salt[1],"s");
 
-	// Current key_idx can only hold 26 bits of offset so
-	// we can't reliably use a GWS higher than 4M or so.
-	gws_limit = MIN((1 << 26) * 4 / (MEM_SIZE * 8),
-	    get_max_mem_alloc_size(gpu_id) / (MEM_SIZE * 8));
+        memset(gen_test[0],0,sizeof(gen_test[0]));
+	memset(gen_test[1],1,sizeof(gen_test[1]));
+        POMELO_gen(gen_test[0],gen_out[0],gen_pass[0],strlen(gen_pass[0]),gen_salt[0],strlen(gen_salt[0]),T_COST,M_COST);
+        POMELO_gen(gen_test[1],gen_out[1],gen_pass[1],strlen(gen_pass[1]),gen_salt[1],strlen(gen_salt[1]),T_COST,M_COST);
 
+        
 
-	// create kernel to execute
-	crypt_kernel =
-	    clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel. Double-check kernel name?");
-
-	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8 * 2, 0);
-
-	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 100, 1000);
-
+ 	for(i=0;i<2;i++)
+        {
+           self->params.tests[i].ciphertext=gen_test[i];
+           self->params.tests[i].plaintext=gen_pass[i];
+        }
 }
 
 static void clear_keys(void)
@@ -446,7 +511,7 @@ static void set_salt(void *salt)
 
 static int cmp_all(void *binary, int count)
 {
-	int i;
+	int i,j,d;
 	int length;
 	unsigned char *str_binary;
 
@@ -457,6 +522,19 @@ static int cmp_all(void *binary, int count)
 
 
 	for (i = 0; i < count; i++) {
+                /*printf("# ");
+		for(j=0;j<length;j++)
+		{
+			d=((char*)binary)[j];
+			printf("%d ",d);
+		}
+		printf("\n= ");
+		for(j=0;j<length;j++)
+		{
+			d=output[j+i*BINARY_SIZE];
+			printf("%d ",d);
+		}
+		printf("\n");*/
 		if (!memcmp(binary, output + i * BINARY_SIZE, length))
 			return 1;
 	}
@@ -482,7 +560,6 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 {
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
-
 
 	global_work_size =
 	    local_work_size ? (count + local_work_size -
@@ -587,14 +664,14 @@ struct fmt_main fmt_opencl_pomelo = {
 		    SALT_ALIGN,
 		    MIN_KEYS_PER_CRYPT,
 		    MAX_KEYS_PER_CRYPT,
-		    FMT_CASE | FMT_8_BIT,
+		    FMT_CASE | FMT_8_BIT | T_COST_NEEDED | M_COST_NEEDED,
 #if FMT_MAIN_VERSION > 11
 		    {NULL},
 #endif
 	    tests}, {
 		    init,
 		    done,
-		    fmt_default_reset,
+		    reset,
 		    fmt_default_prepare,
 		    valid,
 		    fmt_default_split,

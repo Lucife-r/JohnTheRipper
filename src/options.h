@@ -254,6 +254,11 @@ struct options_main {
 /* List of dll files to load for additional formats */
 	struct list_main *fmt_dlls;
 #endif
+/* Requeted t_cost for hash */
+        int t_cost;
+
+/* Requeted m_cost for hash */
+	int m_cost;
 
 /* Requested max_keys_per_crypt (for testing purposes) */
 	int force_maxkeys;
