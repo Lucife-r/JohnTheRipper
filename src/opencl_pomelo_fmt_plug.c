@@ -78,7 +78,7 @@ static char *saved_real_salt, *output, *memory;
 static unsigned long long int MEM_SIZE;
 static short unsigned int M_COST;
 static short unsigned int T_COST;
-
+static size_t global_work_size4;
 
 static struct fmt_tests tests[] = {
 	{NULL},
@@ -327,7 +327,7 @@ static void reset(struct db_main *db) {
 		// we can't reliably use a GWS higher than 4M or so.
 		gws_limit = MIN((1 << 26) * 4 / (MEM_SIZE * 8),
 	    	get_max_mem_alloc_size(gpu_id) / (MEM_SIZE * 8));
-
+ 
 
 		// create kernel to execute
 		crypt_kernel =
@@ -335,7 +335,6 @@ static void reset(struct db_main *db) {
 		HANDLE_CLERROR(ret_code,
 	    	"Error creating kernel. Double-check kernel name?");
 
-		printf("get_max_mem_alloc_size=%d\n",get_max_mem_alloc_size);		//temporary
 	
 		//Initialize openCL tuning (library) for this format.
 		opencl_init_auto_setup(SEED, 0, NULL,
@@ -591,8 +590,9 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[3]), "Failed transferring index");
 
 
+	global_work_size4=global_work_size*4;
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
-		NULL, &global_work_size, lws, 0, NULL,
+		NULL, &global_work_size4, lws, 0, NULL,
 		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
 
 

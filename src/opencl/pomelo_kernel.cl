@@ -22,10 +22,7 @@
     S[MAP(i0+2)] = ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
     S[MAP(i0+3)] = ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
     S[MAP(i0+0)] = ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
-    S[MAP(i0+0)] = (S[MAP(i0+0)] << 17) | (S[MAP(i0+0)] >> 47);  \
-    S[MAP(i0+1)] = (S[MAP(i0+1)] << 17) | (S[MAP(i0+1)] >> 47);  \
-    S[MAP(i0+2)] = (S[MAP(i0+2)] << 17) | (S[MAP(i0+2)] >> 47);  \
-    S[MAP(i0+3)] = (S[MAP(i0+3)] << 17) | (S[MAP(i0+3)] >> 47);  \
+    S[MAP(i0+instruction)] = (S[MAP(i0+instruction)] << 17) | (S[MAP(i0+instruction)] >> 47);  \
 }
 
 #define F(i)  {                \
@@ -34,19 +31,15 @@
     i2 = ((i) - 3*4)  & mask1; \
     i3 = ((i) - 7*4)  & mask1; \
     i4 = ((i) - 13*4) & mask1; \
-    S[MAP(i0+0)] += ((S[MAP(i1+0)] ^ S[MAP(i2+0)]) + S[MAP(i3+0)]) ^ S[MAP(i4+0)];         \
-    S[MAP(i0+1)] += ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
-    S[MAP(i0+2)] += ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
-    S[MAP(i0+3)] += ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
+    address=i0+instruction; \
+    S[MAP(address)] += ((S[MAP(i1+instruction)] ^ S[MAP(i2+instruction)]) + S[MAP(i3+instruction)]) ^ S[MAP(i4+instruction)];         \
     temp = S[MAP(i0+3)];         \
     S[MAP(i0+3)] = S[MAP(i0+2)];      \
     S[MAP(i0+2)] = S[MAP(i0+1)];      \
     S[MAP(i0+1)] = S[MAP(i0+0)];      \
     S[MAP(i0+0)] = temp;         \
-    S[MAP(i0+0)] = (S[MAP(i0+0)] << 17) | (S[MAP(i0+0)] >> 47);  \
-    S[MAP(i0+1)] = (S[MAP(i0+1)] << 17) | (S[MAP(i0+1)] >> 47);  \
-    S[MAP(i0+2)] = (S[MAP(i0+2)] << 17) | (S[MAP(i0+2)] >> 47);  \
-    S[MAP(i0+3)] = (S[MAP(i0+3)] << 17) | (S[MAP(i0+3)] >> 47);  \
+    Saddress = S[MAP(address)]; \
+    S[MAP(address)] = (Saddress << 17) | (Saddress >> 47);  \
 }
 
 #define G(i,random_number)  {                                                       \
@@ -57,22 +50,10 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-        S[MAP(i0+0)]       += (S[MAP(index_local+0)] << 1);                                   \
-        S[MAP(i0+1)]       += (S[MAP(index_local+1)] << 1);                                   \
-        S[MAP(i0+2)]       += (S[MAP(index_local+2)] << 1);                                   \
-        S[MAP(i0+3)]       += (S[MAP(index_local+3)] << 1);                                   \
-        S[MAP(index_local+0)] += (S[MAP(i0+0)] << 2); \
-        S[MAP(index_local+1)] += (S[MAP(i0+1)] << 2); \
-        S[MAP(index_local+2)] += (S[MAP(i0+2)] << 2); \
-        S[MAP(index_local+3)] += (S[MAP(i0+3)] << 2); \
-        S[MAP(i0+0)]       += (S[MAP(index_global+0)] << 1);                                   \
-        S[MAP(i0+1)]       += (S[MAP(index_global+1)] << 1);                                   \
-        S[MAP(i0+2)]       += (S[MAP(index_global+2)] << 1);                                   \
-        S[MAP(i0+3)]       += (S[MAP(index_global+3)] << 1);                                   \
-        S[MAP(index_global+0)] += (S[MAP(i0+0)] << 3); \
-        S[MAP(index_global+1)] += (S[MAP(i0+1)] << 3); \
-        S[MAP(index_global+2)] += (S[MAP(i0+2)] << 3); \
-        S[MAP(index_global+3)] += (S[MAP(i0+3)] << 3); \
+        S[MAP(address)]       += (S[MAP(index_local+instruction)] << 1);                                   \
+        S[MAP(index_local+instruction)] += (S[MAP(address)] << 2); \
+        S[MAP(address)]       += (S[MAP(index_global+instruction)] << 1);                                   \
+        S[MAP(index_global+instruction)] += (S[MAP(address)] << 3); \
         random_number += (random_number << 2);                                      \
         random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;   \
     }                                                                               \
@@ -86,28 +67,19 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-        S[MAP(i0+0)]       += (S[MAP(index_local+0)] << 1);                                   \
-        S[MAP(i0+1)]       += (S[MAP(index_local+1)] << 1);                                   \
-        S[MAP(i0+2)]       += (S[MAP(index_local+2)] << 1);                                   \
-        S[MAP(i0+3)]       += (S[MAP(index_local+3)] << 1);                                   \
-        S[MAP(index_local+0)] += (S[MAP(i0+0)] << 2); \
-        S[MAP(index_local+1)] += (S[MAP(i0+1)] << 2); \
-        S[MAP(index_local+2)] += (S[MAP(i0+2)] << 2); \
-        S[MAP(index_local+3)] += (S[MAP(i0+3)] << 2); \
-        S[MAP(i0+0)]       += (S[MAP(index_global+0)] << 1);                                   \
-        S[MAP(i0+1)]       += (S[MAP(index_global+1)] << 1);                                   \
-        S[MAP(i0+2)]       += (S[MAP(index_global+2)] << 1);                                   \
-        S[MAP(i0+3)]       += (S[MAP(index_global+3)] << 1);                                   \
-        S[MAP(index_global+0)] += (S[MAP(i0+0)] << 3); \
-        S[MAP(index_global+1)] += (S[MAP(i0+1)] << 3); \
-        S[MAP(index_global+2)] += (S[MAP(i0+2)] << 3); \
-        S[MAP(index_global+3)] += (S[MAP(i0+3)] << 3); \
+        S[MAP(address)]       += (S[MAP(index_local+instruction)] << 1);                                   \
+        S[MAP(index_local+instruction)] += (S[MAP(address)] << 2); \
+        S[MAP(address)]       += (S[MAP(index_global+instruction)] << 1);                                   \
+        S[MAP(index_global+instruction)] += (S[MAP(address)] << 3); \
         random_number  = S[MAP(i3)];              \
     }                                        \
 }
 
-#define MAP(X) ((X)*GID+gid)
-#define MAPCH(X) (((X)/8*GID+gid)*8+(X)%8)
+//#define MAP(X) ((X)*GID+gid)
+//#define MAPCH(X) (((X)/8*GID+gid)*8+(X)%8)
+
+#define MAP(X) ((((X)/4*4)*GID+gid*4)/4*4+(X)%4)
+#define MAPCH(X) MAP((X)/8)*8+(X)%8
 
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
@@ -121,17 +93,13 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global unsigned short int *rest_salt,
     __global unsigned long *S)
 {
-
-
-	//unsigned long S[MEM_SIZE];
-
-
-
 	uint gid;
 	uint GID;
+	unsigned long instruction;
 
 	unsigned long i, j, temp, y;
-
+	unsigned long address;
+	unsigned long Saddress;
 	unsigned long i0, i1, i2, i3, i4;
 
 	unsigned long random_number, index_global, index_local;
@@ -144,6 +112,11 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 
 	gid = get_global_id(0);
 	GID=get_global_size(0);
+	
+	//for computing one hash in 4 GPU units	
+	instruction=gid%4;
+	gid=gid/4;
+	GID=GID/4;
 
 	out += gid * BINARY_SIZE;
 
@@ -166,7 +139,8 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
 
 
-
+	if(instruction==0)
+	{
 	//Step 2: Load the password, salt, input/output sizes into the state S
 	for (i = 0; i < inlen; i++)
 		((__global unsigned char *)S)[MAPCH(i)] = in[i];	// load password into S
@@ -191,6 +165,7 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 		((__global unsigned char *)S)[MAPCH(i)] =
 		    ((__global unsigned char *)S)[MAPCH(i - 1)] + ((__global unsigned char *)S)[MAPCH(i - 2)];
 
+	}
 
 	//Step 3: Expand the data into the whole state  
 	y = (1UL << (10 + M_COST));
@@ -217,5 +192,8 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	for (i = 0; i < outlen; i++) {
 		out[i + 1] = ((__global unsigned char *)S)[MAPCH(state_size - outlen + i)];
 	}
-	out[0] = (char)outlen;
+	if(instruction==0)
+	{
+	  out[0] = (char)outlen;
+        }
 }
