@@ -22,7 +22,8 @@
     S[MAP(i0+2)] = ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
     S[MAP(i0+3)] = ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
     S[MAP(i0+0)] = ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
-    S[MAP(i0+instruction)] = (S[MAP(i0+instruction)] << 17) | (S[MAP(i0+instruction)] >> 47);  \
+    Saddress=S[MAP(i0+instruction)];							  \
+    S[MAP(i0+instruction)] = (Saddress << 17) | (Saddress >> 47);  \
 }
 
 #define F(i)  {                \
@@ -39,7 +40,7 @@
     S[MAP(i0+1)] = S[MAP(i0+0)];      \
     S[MAP(i0+0)] = temp;         \
     Saddress = S[MAP(address)]; \
-    S[MAP(address)] = (Saddress << 17) | (Saddress >> 47);  \
+    Saddress=S[MAP(address)] = (Saddress << 17) | (Saddress >> 47);  \
 }
 
 #define G(i,random_number)  {                                                       \
@@ -49,11 +50,29 @@
         F(i+j);                                                                     \
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
-        index_local    = index_local << 2;                                                \
-        S[MAP(address)]       += (S[MAP(index_local+instruction)] << 1);                                   \
-        S[MAP(index_local+instruction)] += (S[MAP(address)] << 2); \
-        S[MAP(address)]       += (S[MAP(index_global+instruction)] << 1);                                   \
-        S[MAP(index_global+instruction)] += (S[MAP(address)] << 3); \
+        index_local    = index_local << 2; \
+	if(address==index_local+instruction) { \
+	   	Saddress       += (Saddress << 1);                                   \
+           	Saddress += (Saddress << 2); \
+           	S[MAP(address)]=Saddress; \
+	} \
+	else {\
+	   loc_addr=MAP(index_local+instruction); \
+           Saddress       += (S[loc_addr] << 1);                                   \
+           S[loc_addr] += (Saddress << 2); \
+	} \
+	if(address==index_global+instruction) \
+	{ \
+		Saddress       += (Saddress << 1);                                   \
+        	Saddress += (Saddress << 3); \
+		S[MAP(address)]=Saddress; \
+	} \
+	else { \
+		glob_addr=MAP(index_global+instruction); \
+        	Saddress       += (S[glob_addr] << 1);                                   \
+        	S[glob_addr] += (Saddress << 3); \
+	} \
+	S[MAP(address)] =Saddress; \
         random_number += (random_number << 2);                                      \
         random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;   \
     }                                                                               \
@@ -67,10 +86,32 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-        S[MAP(address)]       += (S[MAP(index_local+instruction)] << 1);                                   \
-        S[MAP(index_local+instruction)] += (S[MAP(address)] << 2); \
-        S[MAP(address)]       += (S[MAP(index_global+instruction)] << 1);                                   \
-        S[MAP(index_global+instruction)] += (S[MAP(address)] << 3); \
+	Saddress=S[MAP(address)];							\
+	if(address==index_local+instruction) \
+	{ \
+		Saddress       += (Saddress << 1);                                   \
+                Saddress += (Saddress << 2); \
+		S[MAP(address)]=Saddress; \
+	} \
+	else \
+	{ \
+		loc_addr=MAP(index_local+instruction); \
+        	Saddress       += (S[loc_addr] << 1);                                   \
+        	S[loc_addr] += (Saddress << 2); \
+	} \
+	if(address==index_global+instruction) \
+  	{ \
+		Saddress       += (Saddress << 1);                                   \
+        	Saddress += (Saddress << 3);  \
+		S[MAP(address)]=Saddress; \
+	}\
+	else \
+	{ \
+		glob_addr=MAP(index_global+instruction); \
+        	Saddress       += (S[glob_addr] << 1);                                   \
+        	S[glob_addr] += (Saddress << 3); \
+	} \
+	S[MAP(address)]=Saddress;                 \
         random_number  = S[MAP(i3)];              \
     }                                        \
 }
@@ -78,7 +119,7 @@
 //#define MAP(X) ((X)*GID+gid)
 //#define MAPCH(X) (((X)/8*GID+gid)*8+(X)%8)
 
-#define MAP(X) ((((X)/4*4)*GID+gid*4)/4*4+(X)%4)
+#define MAP(X) (((X)/4*4)*GID+gid4+(X)%4)
 #define MAPCH(X) MAP((X)/8)*8+(X)%8
 
 #include "opencl_device_info.h"
@@ -100,7 +141,10 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	unsigned long i, j, temp, y;
 	unsigned long address;
 	unsigned long Saddress;
+	unsigned long gid4;
 	unsigned long i0, i1, i2, i3, i4;
+	unsigned long loc_addr;
+	unsigned long glob_addr;
 
 	unsigned long random_number, index_global, index_local;
 	unsigned long state_size, mask, mask1;
@@ -117,6 +161,7 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	instruction=gid%4;
 	gid=gid/4;
 	GID=GID/4;
+	gid4=gid*4;
 
 	out += gid * BINARY_SIZE;
 
