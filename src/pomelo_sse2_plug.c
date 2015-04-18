@@ -96,7 +96,7 @@
         S[i0+1]          = ADD128(S[i0+1],SHIFTL128(S[index_global+1],1));             \
         S[index_global]  = ADD128(S[index_global],  SHIFTL128(S[i0],3));               \
         S[index_global+1]= ADD128(S[index_global+1],SHIFTL128(S[i0+1],3));             \
-        random_number  = ((unsigned long long*)S)[i3<<1];                                                        \
+        random_number  = ((uint64_t*)S)[i3<<1];                                                        \
     }                                                                                     \
 }
 
@@ -104,14 +104,14 @@
 int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
 {
-	unsigned long long i, j;
+	uint64_t i, j;
 	__m128i temp;
-	unsigned long long i0, i1, i2, i3, i4;
+	uint64_t i0, i1, i2, i3, i4;
 	__m128i *S;
-	unsigned long long random_number, index_global, index_local;
-	unsigned long long state_size, mask, mask1;
+	uint64_t random_number, index_global, index_local;
+	uint64_t state_size, mask, mask1;
 
-	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 32 bytes. 
+	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 64 bytes. 
 	if (inlen > 256 || saltlen > 64 || outlen > 256 || inlen < 0 ||
 	    saltlen < 0 || outlen < 0)
 		return 1;

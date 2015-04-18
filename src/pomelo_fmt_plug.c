@@ -251,7 +251,7 @@ static void *get_salt(char *ciphertext)
 	memset(salt, 0, sizeof(salt));
 
 	salt[0] = (char)(strlen(last_dollar + 1) / 2);
-	salt[1] = (char)(last_dollar - i);
+
 	salt[last_dollar - i + 4] = 0;
 	salt[SALT_SIZE + 4] = 0;
 	first_dollar = strchr(i, '$');
@@ -261,6 +261,7 @@ static void *get_salt(char *ciphertext)
 
 	cm_cost = atoi(first_dollar + 1);
 
+	salt[1] = (char)(last_dollar - second_dollar - 1);
 	salt[2] = ct_cost;
 	salt[3] = cm_cost;
 
@@ -280,10 +281,9 @@ static void set_salt(void *salt)
 	t_cost = o[2];
 	m_cost = o[3];
 
-	length_salt = strlen(i + 4);
+	length_salt = o[1];
 	memset(saved_salt, 0, sizeof(saved_salt));
 	memcpy(saved_salt, i, length_salt);
-	saved_salt[length_salt] = 0;
 }
 
 static void set_key(char *key, int index)
