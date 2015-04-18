@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <inttypes.h>
 #include "pomelo.h"
 
 #define F0(i)  {               \
@@ -111,20 +112,20 @@
 int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
 {
-	unsigned long long i, j, temp;
-	unsigned long long i0, i1, i2, i3, i4;
-	unsigned long long *S;
-	unsigned long long random_number, index_global, index_local;
-	unsigned long long state_size, mask, mask1;
+	uint64_t i, j, temp;
+	uint64_t i0, i1, i2, i3, i4;
+	uint64_t *S;
+	uint64_t random_number, index_global, index_local;
+	uint64_t state_size, mask, mask1;
 
-	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 32 bytes. 
+	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 64 bytes. 
 	if (inlen > 256 || saltlen > 64 || outlen > 256 || inlen < 0 ||
 	    saltlen < 0 || outlen < 0)
 		return 1;
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (unsigned long long *)malloc(state_size);
+	S = (uint64_t *) malloc(state_size);
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/8; 
 
@@ -173,38 +174,4 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 	free(S);		// free the memory
 
 	return 0;
-}
-
-
-static void bin_to_char(char *bin, int bin_length, char *out)
-{
-	int i;
-	for (i = 0; i < bin_length; i++) {
-		out[i * 2] = (bin[i] >> 4);
-		out[i * 2 + 1] = (bin[i]) << 4;
-		out[i * 2 + 1] = out[i * 2 + 1] >> 4;
-		if (out[i * 2] >= 10)
-			out[i * 2] += 55;
-		else
-			out[i * 2] += 48;
-		if (out[i * 2 + 1] >= 10)
-			out[i * 2 + 1] += 55;
-		else
-			out[i * 2 + 1] += 48;
-	}
-}
-
-
-void POMELO_gen(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
-{
-	char *m = malloc(512);
-	char *cout = malloc(1024);
-	POMELO(m, outlen, in, inlen, salt, saltlen, t_cost, m_cost);
-	bin_to_char(m, outlen, cout);
-
-	sprintf(out, "$POMELO$%d$%d$%s$%s\n", t_cost, m_cost, (char *)salt,
-	    cout);
-	free(m);
-	free(cout);
 }
