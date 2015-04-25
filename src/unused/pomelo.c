@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MIN(X,Y) ((X) < (Y) ? : (X) : (Y))
+
 #define F0(i)  {               \
     i0 = ((i) - 0*4)  & mask1; \
     i1 = ((i) - 2*4)  & mask1; \
@@ -228,7 +230,7 @@ int main(int argc, char **argv)
 	char *cout = malloc(2000);
 	PHS(out, atoi(argv[3]), argv[1], strlen(argv[1]), argv[2],
 	    strlen(argv[2]), atoi(argv[4]), atoi(argv[5]));
-	bin_to_char(out, atoi(argv[3]), cout);
+	bin_to_char(out, MIN(atoi(argv[3]), 256), cout);
 	char *k = malloc(2000);
 	sprintf(k, "$POMELO$%d$%d$%s$%s\n", atoi(argv[4]), atoi(argv[5]),
 	    argv[2], cout);
