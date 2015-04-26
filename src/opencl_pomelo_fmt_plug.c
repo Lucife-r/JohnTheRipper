@@ -74,7 +74,6 @@ static int partial_output;
 static unsigned short int *saved_rest_salt;
 static char *saved_real_salt, *output, *memory;
 static unsigned long long int MEM_SIZE;
-static size_t global_work_size4;
 static unsigned short ct_cost, cm_cost;
 
 static struct fmt_tests tests[] = {
@@ -346,12 +345,13 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	i = next_dollar + 1;
 	//m_cost
 	next_dollar = strchr(i, '$');
-	if (next_dollar == NULL || next_dollar - i > 4 || next_dollar == i)
+	if (next_dollar == NULL || next_dollar - i > 2 || next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	//salt
 	next_dollar = strchr(i, '$');
-	if (next_dollar == NULL || next_dollar - i > 32 || next_dollar == i)
+	if (next_dollar == NULL || next_dollar - i > SALT_SIZE ||
+	    next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	if (strlen(i) > 512 || strlen(i) == 0)
@@ -629,9 +629,8 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[3]), "Failed transferring index");
 
 
-	global_work_size4 = global_work_size * 4;
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
-		NULL, &global_work_size4, lws, 0, NULL,
+		NULL, &global_work_size, lws, 0, NULL,
 		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
 
 

@@ -28,6 +28,8 @@ john_register_one(&fmt_pomelo);
 
 #ifdef __AVX2__
 #define ALGORITHM_NAME			"AVX2"
+#elif defined(__AVX__)
+#define ALGORITHM_NAME			"AVX"
 #elif defined(SIMD_COEF_64)
 #define ALGORITHM_NAME			"SSE2"
 #else
@@ -35,7 +37,7 @@ john_register_one(&fmt_pomelo);
 #endif
 
 #define BENCHMARK_COMMENT		""
-#define BENCHMARK_LENGTH		-1
+#define BENCHMARK_LENGTH		0
 
 #define PLAINTEXT_LENGTH		125
 //256
@@ -182,12 +184,13 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	i = next_dollar + 1;
 	//m_cost
 	next_dollar = strchr(i, '$');
-	if (next_dollar == NULL || next_dollar - i > 4 || next_dollar == i)
+	if (next_dollar == NULL || next_dollar - i > 2 || next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	//salt
 	next_dollar = strchr(i, '$');
-	if (next_dollar == NULL || next_dollar - i > 32 || next_dollar == i)
+	if (next_dollar == NULL || next_dollar - i > SALT_SIZE ||
+	    next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	if (strlen(i) > 512 || strlen(i) == 0)
