@@ -1,7 +1,7 @@
 // PHC submission:  POMELO v2  
 // Designed by:     Hongjun Wu (Email: wuhongjun@gmail.com)  
 // This code was written by Hongjun Wu on Jan 31, 2015. 
-// This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on March 29,2015. 
+// This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on April,2015. 
 
 
 // This codes gives the C implementation of POMELO on 64-bit platform (little-endian) 
@@ -18,12 +18,15 @@
     i2 = ((i) - 3*4)  & mask1; \
     i3 = ((i) - 7*4)  & mask1; \
     i4 = ((i) - 13*4) & mask1; \
-    S[MAP(i0+1)] = ((S[MAP(i1+0)] ^ S[MAP(i2+0)]) + S[MAP(i3+0)]) ^ S[MAP(i4+0)];         \
-    S[MAP(i0+2)] = ((S[MAP(i1+1)] ^ S[MAP(i2+1)]) + S[MAP(i3+1)]) ^ S[MAP(i4+1)];         \
-    S[MAP(i0+3)] = ((S[MAP(i1+2)] ^ S[MAP(i2+2)]) + S[MAP(i3+2)]) ^ S[MAP(i4+2)];         \
-    S[MAP(i0+0)] = ((S[MAP(i1+3)] ^ S[MAP(i2+3)]) + S[MAP(i3+3)]) ^ S[MAP(i4+3)];         \
-    Saddress=S[MAP(i0+instruction)];							  \
-    S[MAP(i0+instruction)] = (Saddress << 17) | (Saddress >> 47);  \
+    v=vload4(0,S+sMAP(i0));      \
+    v1=vload4(0,S+sMAP(i1));      \
+    v2=vload4(0,S+sMAP(i2));      \
+    v3=vload4(0,S+sMAP(i3));      \
+    v4=vload4(0,S+sMAP(i4));      \
+    v= ((v1^v2)+v3)^v4; \
+    v=(ulong4)(v.w,v.xyz);          \
+    v= v<<17 | v >>47; \
+    vstore4(v,0,S+sMAP(i0)); \
 }
 
 #define F(i)  {                \
@@ -32,17 +35,19 @@
     i2 = ((i) - 3*4)  & mask1; \
     i3 = ((i) - 7*4)  & mask1; \
     i4 = ((i) - 13*4) & mask1; \
-    address=i0+instruction; \
-    S[MAP(address)] += ((S[MAP(i1+instruction)] ^ S[MAP(i2+instruction)]) + S[MAP(i3+instruction)]) ^ S[MAP(i4+instruction)];         \
-    temp = S[MAP(i0+3)];         \
-    S[MAP(i0+3)] = S[MAP(i0+2)];      \
-    S[MAP(i0+2)] = S[MAP(i0+1)];      \
-    S[MAP(i0+1)] = S[MAP(i0+0)];      \
-    S[MAP(i0+0)] = temp;         \
-    Saddress = S[MAP(address)]; \
-    Saddress=S[MAP(address)] = (Saddress << 17) | (Saddress >> 47);  \
+\
+    v=vload4(0,S+sMAP(i0));      \
+    v1=vload4(0,S+sMAP(i1));      \
+    v2=vload4(0,S+sMAP(i2));      \
+    v3=vload4(0,S+sMAP(i3));      \
+    v4=vload4(0,S+sMAP(i4));      \
+    v= v+(((v1^v2)+v3)^v4); \
+\
+    v=(ulong4)(v.w,v.x,v.y,v.z);   \
+\
+    v= v<<17 | v >>47; \
+    vstore4(v,0,S+sMAP(i0)); \
 }
-
 #define G(i,random_number)  {                                                       \
     index_global = ((random_number >> 16) & mask) << 2;                             \
     for (j = 0; j < 128; j = j+4)                                                   \
@@ -50,29 +55,36 @@
         F(i+j);                                                                     \
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
-        index_local    = index_local << 2; \
-	if(address==index_local+instruction) { \
-	   	Saddress       += (Saddress << 1);                                   \
-           	Saddress += (Saddress << 2); \
-           	S[MAP(address)]=Saddress; \
-	} \
-	else {\
-	   loc_addr=MAP(index_local+instruction); \
-           Saddress       += (S[loc_addr] << 1);                                   \
-           S[loc_addr] += (Saddress << 2); \
-	} \
-	if(address==index_global+instruction) \
+        index_local    = index_local << 2;                                                \
+\
+	if(i0==index_local) \
 	{ \
-		Saddress       += (Saddress << 1);                                   \
-        	Saddress += (Saddress << 3); \
-		S[MAP(address)]=Saddress; \
+    	v= v+(v<<1); \
+	v=v+(v<<2); 			\
+	vstore4(v,0,S+sMAP(i0));               \
 	} \
-	else { \
-		glob_addr=MAP(index_global+instruction); \
-        	Saddress       += (S[glob_addr] << 1);                                   \
-        	S[glob_addr] += (Saddress << 3); \
+	else \
+	{ \
+	v1=vload4(0,S+sMAP(index_local));   	\
+    	v= v+(v1<<1); \
+	v1=v1+(v<<2); 			\
+	vstore4(v1,0,S+sMAP(index_local));               \
 	} \
-	S[MAP(address)] =Saddress; \
+\
+	if(i0==index_global) \
+	{	\
+    	v= v+(v<<1); \
+	v=v+(v<<3); 			\
+	vstore4(v,0,S+sMAP(i0));               \
+	}	\
+	else	\
+	{\
+	v1=vload4(0,S+sMAP(index_global));   	\
+    	v= v+(v1<<1); \
+	v1=v1+(v<<3); 			\
+	vstore4(v1,0,S+sMAP(index_global));               \
+	} \
+	vstore4(v,0,S+sMAP(i0));\
         random_number += (random_number << 2);                                      \
         random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;   \
     }                                                                               \
@@ -86,87 +98,75 @@
         index_global   = (index_global + 4) & mask1;                                      \
         index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 2;                                                \
-	Saddress=S[MAP(address)];							\
-	if(address==index_local+instruction) \
-	{ \
-		Saddress       += (Saddress << 1);                                   \
-                Saddress += (Saddress << 2); \
-		S[MAP(address)]=Saddress; \
-	} \
-	else \
-	{ \
-		loc_addr=MAP(index_local+instruction); \
-        	Saddress       += (S[loc_addr] << 1);                                   \
-        	S[loc_addr] += (Saddress << 2); \
-	} \
-	if(address==index_global+instruction) \
-  	{ \
-		Saddress       += (Saddress << 1);                                   \
-        	Saddress += (Saddress << 3);  \
-		S[MAP(address)]=Saddress; \
+\
+	if(i0==index_local) \
+	{\
+    	v= v+(v<<1); \
+	v=v+(v<<2); 			\
+	vstore4(v,0,S+sMAP(i0));               \
 	}\
 	else \
 	{ \
-		glob_addr=MAP(index_global+instruction); \
-        	Saddress       += (S[glob_addr] << 1);                                   \
-        	S[glob_addr] += (Saddress << 3); \
+	v1=vload4(0,S+sMAP(index_local));   	\
+    	v= v+(v1<<1); \
+	v1=v1+(v<<2); 			\
+	vstore4(v1,0,S+sMAP(index_local));               \
+	}\
+\
+	if(i0==index_global) \
+	{ \
+    	v= v+(v<<1); \
+	v=v+(v<<3); 			\
+	vstore4(v,0,S+sMAP(i0));               \
 	} \
-	S[MAP(address)]=Saddress;                 \
-        random_number  = S[MAP(i3)];              \
+	else \
+	{ \
+	v1=vload4(0,S+sMAP(index_global));   	\
+    	v= v+(v1<<1); \
+	v1=v1+(v<<3); 			\
+	vstore4(v1,0,S+sMAP(index_global));               \
+	}\
+	vstore4(v,0,S+sMAP(i0));               \
+        random_number  = S[sMAP(i3)];              \
     }                                        \
 }
 
-//#define MAP(X) ((X)*GID+gid)
-//#define MAPCH(X) (((X)/8*GID+gid)*8+(X)%8)
-
 #define MAP(X) (((X)/4*4)*GID+gid4+(X)%4)
+#define sMAP(X) ((X)*GID+gid4)
 #define MAPCH(X) MAP((X)/8)*8+(X)%8
 
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
 
-// BINARY_SIZE, SALT_SIZE is passed with -D during build
+// BINARY_SIZE, SALT_SIZE, MEM_SIZE, T_COST and M_COST is passed with -D during build
 
 __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
     __global const char *salt,
-    __global unsigned short int *rest_salt
-  , __global unsigned long *S)
+    __global unsigned short int *rest_salt, __global unsigned long *S)
 {
+	unsigned long gid4;
+
 	uint gid;
 	uint GID;
-	unsigned long instruction;
 
-	unsigned long i, j, temp, y;
-	unsigned long address;
-	unsigned long Saddress;
-	unsigned long gid4;
+	unsigned long i, j, y;
+
 	unsigned long i0, i1, i2, i3, i4;
-	unsigned long loc_addr;
-	unsigned long glob_addr;
 
 	unsigned long random_number, index_global, index_local;
 	unsigned long state_size, mask, mask1;
+	ulong4 v, v1, v2, v3, v4;
 
 	unsigned short int M_COST, T_COST;
-
 	size_t outlen, saltlen;
 
 	uint base, inlen;
 
 	gid = get_global_id(0);
 	GID = get_global_size(0);
-
-	//for computing one hash in 4 GPU units 
-	instruction = gid % 4;
-	gid = gid / 4;
-	GID = GID / 4;
 	gid4 = gid * 4;
-
-	T_COST = rest_salt[2];
-	M_COST = rest_salt[3];
-
 
 	out += gid * BINARY_SIZE;
 
@@ -175,6 +175,9 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 
 	outlen = rest_salt[0];
 	saltlen = rest_salt[1];
+
+	T_COST = rest_salt[2];
+	M_COST = rest_salt[3];
 
 
 	in += base;
@@ -189,33 +192,33 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
 
 
-	if (instruction == 0) {
-		//Step 2: Load the password, salt, input/output sizes into the state S
-		for (i = 0; i < inlen; i++)
-			((__global unsigned char *)S)[MAPCH(i)] = in[i];	// load password into S
-		for (i = 0; i < saltlen; i++)
-			((__global unsigned char *)S)[MAPCH(inlen + i)] = salt[i];	// load salt into S
-		for (i = inlen + saltlen; i < 384; i++)
-			((__global unsigned char *)S)[MAPCH(i)] = 0;
-		((__global unsigned char *)S)[MAPCH(384)] = inlen & 0xff;	// load password length (in bytes) into S;
-		((__global unsigned char *)S)[MAPCH(385)] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
-		((__global unsigned char *)S)[MAPCH(386)] = saltlen;	// load salt length (in bytes) into S;
-		((__global unsigned char *)S)[MAPCH(387)] = outlen & 0xff;	// load output length (in bytes into S)
-		((__global unsigned char *)S)[MAPCH(388)] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
-		((__global unsigned char *)S)[MAPCH(389)] = 0;
-		((__global unsigned char *)S)[MAPCH(390)] = 0;
-		((__global unsigned char *)S)[MAPCH(391)] = 0;
 
-		((__global unsigned char *)S)[MAPCH(392)] = 1;
-		((__global unsigned char *)S)[MAPCH(393)] = 1;
+	//Step 2: Load the password, salt, input/output sizes into the state S
+	for (i = 0; i < inlen; i++)
+		((__global unsigned char *)S)[MAPCH(i)] = in[i];	// load password into S
+	for (i = 0; i < saltlen; i++)
+		((__global unsigned char *)S)[MAPCH(inlen + i)] = salt[i];	// load salt into S
+	for (i = inlen + saltlen; i < 384; i++)
+		((__global unsigned char *)S)[MAPCH(i)] = 0;
+	((__global unsigned char *)S)[MAPCH(384)] = inlen & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(385)] = (inlen >> 8) & 0xff;	// load password length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(386)] = saltlen;	// load salt length (in bytes) into S;
+	((__global unsigned char *)S)[MAPCH(387)] = outlen & 0xff;	// load output length (in bytes into S)
+	((__global unsigned char *)S)[MAPCH(388)] = (outlen >> 8) & 0xff;	// load output length (in bytes into S) 
+	((__global unsigned char *)S)[MAPCH(389)] = 0;
+	((__global unsigned char *)S)[MAPCH(390)] = 0;
+	((__global unsigned char *)S)[MAPCH(391)] = 0;
+
+	((__global unsigned char *)S)[MAPCH(392)] = 1;
+	((__global unsigned char *)S)[MAPCH(393)] = 1;
 
 
-		for (i = 394; i < 416; i++)
-			((__global unsigned char *)S)[MAPCH(i)] =
-			    ((__global unsigned char *)S)[MAPCH(i - 1)] +
-			    ((__global unsigned char *)S)[MAPCH(i - 2)];
+	for (i = 394; i < 416; i++)
+		((__global unsigned char *)S)[MAPCH(i)] =
+		    ((__global unsigned char *)S)[MAPCH(i - 1)] +
+		    ((__global unsigned char *)S)[MAPCH(i - 2)];
 
-	}
+
 	//Step 3: Expand the data into the whole state  
 	y = (1UL << (10 + M_COST));
 	for (i = 13 * 4; i < y; i = i + 4)
@@ -243,7 +246,5 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 		    ((__global unsigned char *)S)[MAPCH(state_size - outlen +
 			i)];
 	}
-	if (instruction == 0) {
-		out[0] = (char)outlen;
-	}
+	out[0] = (char)outlen;
 }

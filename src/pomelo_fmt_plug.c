@@ -187,7 +187,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	i = next_dollar + 1;
 	//salt
 	next_dollar = strchr(i, '$');
-	if (next_dollar == NULL || next_dollar - i > 32 || next_dollar == i)
+	if (next_dollar == NULL || next_dollar - i > SALT_SIZE || next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	if (strlen(i) > 512 || strlen(i) == 0)
