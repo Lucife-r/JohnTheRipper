@@ -16,21 +16,21 @@
 #include <inttypes.h>
 #include "arch.h"
 
-int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
+#define PLAINTEXT_LENGTH		125
+#define BINARY_SIZE			257
+
+int POMELO(void *out, size_t outlen, const void *in, size_t *inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost);
 
 #ifdef __AVX2__
-int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
-
+int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t *inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost);
 
 #elif defined(SIMD_COEF_64)
 
-int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
+int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t *inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost);
+
 
 #endif
 

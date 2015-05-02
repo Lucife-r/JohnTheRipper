@@ -28,33 +28,32 @@ john_register_one(&fmt_pomelo);
 
 #ifdef __AVX2__
 #define ALGORITHM_NAME			"AVX2"
+#define POMELO_INTERLEAVING_LEVEL	4
 #elif defined(__AVX__)
 #define ALGORITHM_NAME			"AVX"
+#define POMELO_INTERLEAVING_LEVEL	2
 #elif defined(SIMD_COEF_64)
 #define ALGORITHM_NAME			"SSE2"
+#define POMELO_INTERLEAVING_LEVEL	2
 #else
 #define ALGORITHM_NAME			" "
+#define POMELO_INTERLEAVING_LEVEL 	2
 #endif
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
 
-#define PLAINTEXT_LENGTH		125
-//256
-//maks len word
-#define CIPHERTEXT_LENGTH		512
-//40
 
-#define BINARY_SIZE			257
-//length + 256
-//20
+#define CIPHERTEXT_LENGTH		512
+
+
 #define BINARY_ALIGN			1
 #define SALT_SIZE			64
 
 #define SALT_ALIGN			1
 
-#define MIN_KEYS_PER_CRYPT		1
-#define MAX_KEYS_PER_CRYPT		1
+#define MIN_KEYS_PER_CRYPT		POMELO_INTERLEAVING_LEVEL
+#define MAX_KEYS_PER_CRYPT		POMELO_INTERLEAVING_LEVEL
 
 #ifdef __AVX2__
 #define OMP_SCALE 16
@@ -63,6 +62,7 @@ john_register_one(&fmt_pomelo);
 #else
 #define OMP_SCALE 16
 #endif
+
 
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
@@ -118,8 +118,8 @@ static struct fmt_tests tests[] = {
 };
 
 static char saved_salt[SALT_SIZE];
-//static char saved_key[PLAINTEXT_LENGTH + 1];
 static char *saved_key;
+static size_t *saved_length;
 
 static unsigned char *crypted;
 static int length_cipher;
@@ -155,16 +155,23 @@ static void init(struct fmt_main *self)
 	self->params.max_keys_per_crypt *= omp_t;
 #endif
 	saved_key =
-	    malloc(self->params.max_keys_per_crypt * (PLAINTEXT_LENGTH + 1));
+	    malloc((self->params.max_keys_per_crypt+3) * (PLAINTEXT_LENGTH + 1));
 	memset(saved_key, 0,
-	    self->params.max_keys_per_crypt * (PLAINTEXT_LENGTH + 1));
-	crypted = malloc(self->params.max_keys_per_crypt * (BINARY_SIZE));
-	memset(crypted, 0, self->params.max_keys_per_crypt * (BINARY_SIZE));
+	    (self->params.max_keys_per_crypt+3) * (PLAINTEXT_LENGTH + 1));
+
+	saved_length =
+	    malloc((self->params.max_keys_per_crypt+3) * sizeof(size_t));
+	memset(saved_length, 0,
+	    (self->params.max_keys_per_crypt+3) * sizeof(size_t));
+
+	crypted = malloc((self->params.max_keys_per_crypt+3) * (BINARY_SIZE));
+	memset(crypted, 0, (self->params.max_keys_per_crypt+3) * (BINARY_SIZE));
 }
 
 static void done(void)
 {
 	free(saved_key);
+	free(saved_length);
 	free(crypted);
 }
 
@@ -325,6 +332,7 @@ static void set_salt(void *salt)
 	memcpy(saved_salt, i, length_salt);
 }
 
+
 static void set_key(char *key, int index)
 {
 	int len;
@@ -333,6 +341,7 @@ static void set_key(char *key, int index)
 		len = PLAINTEXT_LENGTH;
 	memcpy(saved_key + index * (PLAINTEXT_LENGTH + 1), key, len);
 	saved_key[index * (PLAINTEXT_LENGTH + 1) + len] = 0;
+	saved_length[index]=len;
 }
 
 static char *get_key(int index)
@@ -342,14 +351,15 @@ static char *get_key(int index)
 
 static int crypt_all(int *pcount, struct db_salt *salt)
 {
-	int i;
+	int i,j;
 	const int count = *pcount;
 
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-	for (i = 0; i < count; i++) {
-		crypted[i * BINARY_SIZE] = (char)length_cipher;
+	for (i = 0; i < count; i+=POMELO_INTERLEAVING_LEVEL) {
+		for(j=0;j<POMELO_INTERLEAVING_LEVEL;j++)
+		  crypted[(i+j) * BINARY_SIZE] = (char)length_cipher;
 #ifdef __AVX2__
 		POMELO_AVX2
 #elif defined(SIMD_COEF_64)
@@ -359,7 +369,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 #endif
 		    (crypted + 1 + i * BINARY_SIZE, length_cipher,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
-		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt,
+		    saved_length+i, saved_salt,
 		    length_salt, t_cost, m_cost);
 	}
 	return count;
