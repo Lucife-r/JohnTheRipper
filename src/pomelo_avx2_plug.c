@@ -29,120 +29,80 @@
 // Function F0 update the state using a nonlinear feedback shift register in the expansion (step 3)   
 #define F0(i)  {            \
     i0 = ((i) - 0)  & mask; \
-    i1 = ((i) - 8)  & mask; \
-    i2 = ((i) - 12)  & mask; \
-    i3 = ((i) - 28)  & mask; \
-    i4 = ((i) - 52) & mask; \
+    i1 = ((i) - 4)  & mask; \
+    i2 = ((i) - 6)  & mask; \
+    i3 = ((i) - 14)  & mask; \
+    i4 = ((i) - 26) & mask; \
     S[i0] = XOR256(ADD256(XOR256(S[i1], S[i2]), S[i3]), S[i4]);  \
     S[i0+1] = XOR256(ADD256(XOR256(S[i1+1], S[i2+1]), S[i3+1]), S[i4+1]);  \
-    S[i0+2] = XOR256(ADD256(XOR256(S[i1+2], S[i2+2]), S[i3+2]), S[i4+2]);  \
-    S[i0+3] = XOR256(ADD256(XOR256(S[i1+3], S[i2+3]), S[i3+3]), S[i4+3]);  \
     S[i0] = ROTL256_64(S[i0]);  \
     S[i0+1] = ROTL256_64(S[i0+1]);  \
-    S[i0+2] = ROTL256_64(S[i0+2]);  \
-    S[i0+3] = ROTL256_64(S[i0+3]);  \
     S[i0] = ROTL256(S[i0],17);  \
     S[i0+1] = ROTL256(S[i0+1],17);  \
-    S[i0+2] = ROTL256(S[i0+2],17);  \
-    S[i0+3] = ROTL256(S[i0+3],17);  \
 }
 
 // Function F update the state using a nonlinear feedback shift register
 #define F(i)  {             \
     i0 = ((i) - 0)  & mask; \
-    i1 = ((i) - 8)  & mask; \
-    i2 = ((i) - 12)  & mask; \
-    i3 = ((i) - 28)  & mask; \
-    i4 = ((i) - 52) & mask; \
+    i1 = ((i) - 4)  & mask; \
+    i2 = ((i) - 6)  & mask; \
+    i3 = ((i) - 14)  & mask; \
+    i4 = ((i) - 26) & mask; \
     S[i0] = ADD256(S[i0], XOR256(ADD256(XOR256(S[i1], S[i2]), S[i3]), S[i4]));      \
     S[i0+1] = ADD256(S[i0+1], XOR256(ADD256(XOR256(S[i1+1], S[i2+1]), S[i3+1]), S[i4+1]));      \
-    S[i0+2] = ADD256(S[i0+2], XOR256(ADD256(XOR256(S[i1+2], S[i2+2]), S[i3+2]), S[i4+2]));      \
-    S[i0+3] = ADD256(S[i0+3], XOR256(ADD256(XOR256(S[i1+3], S[i2+3]), S[i3+3]), S[i4+3]));      \
     S[i0] = ROTL256_64(S[i0]);  \
     S[i0+1] = ROTL256_64(S[i0+1]);  \
-    S[i0+2] = ROTL256_64(S[i0+2]);  \
-    S[i0+3] = ROTL256_64(S[i0+3]);  \
     S[i0] = ROTL256(S[i0],17); \
     S[i0+1] = ROTL256(S[i0+1],17); \
-    S[i0+2] = ROTL256(S[i0+2],17); \
-    S[i0+3] = ROTL256(S[i0+3],17); \
 }
 
 // Function G update the state using function F together with Key-INdependent random memory accesses  
 #define G(i)  {                                                       \
-    index_global[0] = ((random_number[0] >> 16)<<2) & mask;                                    \
-    for (j = 0; j < 128; j+=4)                                                        \
+    index_global = ((random_number >> 16)<<1) & mask;                                    \
+    for (j = 0; j < 64; j+=2)                                                        \
     {                                                                               \
         F(i+j);                                                                     \
-        index_global[0]   = (index_global[0] + 4) & mask;                                 \
-        index_local[0]    = ((((i + j)>>2) - 0x1000 + (random_number[0] & 0x1fff))<<2 )& mask;        \
-        S[i0]            = ADD256(S[i0],  SHIFTL256(S[index_local[0]],  1));           \
-	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_local[0]+1],1));           \
-	S[i0+2]          = ADD256(S[i0+2],SHIFTL256(S[index_local[0]+2],1));           \
-	S[i0+3]          = ADD256(S[i0+3],SHIFTL256(S[index_local[0]+3],1));           \
-        S[index_local[0]]   = ADD256(S[index_local[0]],    SHIFTL256(S[i0],  2));      \
-	S[index_local[0]+1] = ADD256(S[index_local[0]+1],  SHIFTL256(S[i0+1],2));      \
-	S[index_local[0]+2] = ADD256(S[index_local[0]+2],  SHIFTL256(S[i0+2],2));      \
-	S[index_local[0]+3] = ADD256(S[index_local[0]+3],  SHIFTL256(S[i0+3],2));      \
-        S[i0]          	 = ADD256(S[i0],  SHIFTL256(S[index_global[0]],  1));          \
-	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_global[0]+1],1));          \
-	S[i0+2]          = ADD256(S[i0+2],SHIFTL256(S[index_global[0]+2],1));          \
-	S[i0+3]          = ADD256(S[i0+3],SHIFTL256(S[index_global[0]+3],1));          \
-        S[index_global[0]  ]= ADD256(S[index_global[0]],   SHIFTL256(S[i0],3));        \
-	S[index_global[0]+1]= ADD256(S[index_global[0]+1], SHIFTL256(S[i0+1],3));      \
-	S[index_global[0]+2]= ADD256(S[index_global[0]+2], SHIFTL256(S[i0+2],3));      \
-	S[index_global[0]+3]= ADD256(S[index_global[0]+3], SHIFTL256(S[i0+3],3));      \
-        random_number[0] += (random_number[0] << 2);                                      \
-        random_number[0]  = (random_number[0] << 19) ^ (random_number[0] >> 45)  ^ 3141592653589793238ULL;   \
+        index_global   = (index_global + 2) & mask;                                 \
+        index_local    = ((((i + j)>>1) - 0x1000 + (random_number & 0x1fff))<<1 )& mask;        \
+        S[i0]            = ADD256(S[i0],  SHIFTL256(S[index_local],  1));           \
+	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_local+1],1));           \
+        S[index_local]   = ADD256(S[index_local],    SHIFTL256(S[i0],  2));      \
+	S[index_local+1] = ADD256(S[index_local+1],  SHIFTL256(S[i0+1],2));      \
+        S[i0]          	 = ADD256(S[i0],  SHIFTL256(S[index_global],  1));          \
+	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_global+1],1));          \
+        S[index_global  ]= ADD256(S[index_global],   SHIFTL256(S[i0],3));        \
+	S[index_global+1]= ADD256(S[index_global+1], SHIFTL256(S[i0+1],3));      \
+        random_number += (random_number << 2);                                      \
+        random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238ULL;   \
     }                                                                               \
 }
 
 // Function H update the state using function F together with Key-dependent random memory accesses  
 #define H(i)  {                                                      \
-    index_global[0] = ((random_number[0] >> 16)<<2) & mask;                                  \
-    index_global[1] = ((random_number[1] >> 16)<<2) & mask;                                  \
-    index_global[2] = ((random_number[2] >> 16)<<2) & mask;                                  \
-    index_global[3] = ((random_number[3] >> 16)<<2) & mask;                                  \
-    for (j = 0; j < 128; j+=4)                                                        \
+    index_global  = ((random_number  >> 16)<<1) & mask;                                  \
+    index_global2 = ((random_number2 >> 16)<<1) & mask;                                  \
+    for (j = 0; j < 64; j+=2)                                                        \
     {                                                                               \
         F(i+j);                                                                     \
-        index_global[0]  = (index_global[0] + 4) & mask;                            \
-	index_global[1]  = (index_global[1] + 4) & mask;                            \
-	index_global[2]  = (index_global[2] + 4) & mask;                            \
-	index_global[3]  = (index_global[3] + 4) & mask;                            \
-        index_local[0]   = (((((i + j)>>2) - 0x1000 + (random_number[0] & 0x1fff))<<2 )& mask);     \
-	index_local[1]   = (((((i + j)>>2) - 0x1000 + (random_number[1] & 0x1fff))<<2 )& mask) +1;     \
-	index_local[2]   = (((((i + j)>>2) - 0x1000 + (random_number[2] & 0x1fff))<<2 )& mask) +2;     \
-	index_local[3]   = (((((i + j)>>2) - 0x1000 + (random_number[3] & 0x1fff))<<2 )& mask) +3;     \
-	index_global_t[0]=index_global[0];					    \
-	index_global_t[1]=index_global[1]+1;					    \
-	index_global_t[2]=index_global[2]+2;					    \
-	index_global_t[3]=index_global[3]+3;					    \
-        S[i0]          = ADD256(S[i0],  SHIFTL256(S[index_local[0]],1));                 \
-	S[i0+1]        = ADD256(S[i0+1],SHIFTL256(S[index_local[1]],1));              \
-	S[i0+2]        = ADD256(S[i0+2],SHIFTL256(S[index_local[2]],1));              \
-	S[i0+3]        = ADD256(S[i0+3],SHIFTL256(S[index_local[3]],1));              \
-        S[index_local[0]] = ADD256(S[index_local[0]],  SHIFTL256(S[i0],  2));           \
-	S[index_local[1]] = ADD256(S[index_local[1]],  SHIFTL256(S[i0+1],2));           \
-	S[index_local[2]] = ADD256(S[index_local[2]],  SHIFTL256(S[i0+2],2));           \
-	S[index_local[3]] = ADD256(S[index_local[3]],  SHIFTL256(S[i0+3],2));           \
-        S[i0]            = ADD256(S[i0],  SHIFTL256(S[index_global_t[0]],1));           \
-	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_global_t[1]],1));           \
-	S[i0+2]          = ADD256(S[i0+2],SHIFTL256(S[index_global_t[2]],1));           \
-	S[i0+3]          = ADD256(S[i0+3],SHIFTL256(S[index_global_t[3]],1));           \
-        S[index_global_t[0]]= ADD256(S[index_global_t[0]], SHIFTL256(S[i0],  3));           \
-	S[index_global_t[1]]= ADD256(S[index_global_t[1]], SHIFTL256(S[i0+1],3));           \
-	S[index_global_t[2]]= ADD256(S[index_global_t[2]], SHIFTL256(S[i0+2],3));           \
-	S[index_global_t[3]]= ADD256(S[index_global_t[3]], SHIFTL256(S[i0+3],3));           \
-        random_number[0]   = ((uint64_t*)S)[(i3     << 2)];                       	    \
-	random_number[1]   = ((uint64_t*)S)[((i3+1) << 2)];                       	    \
-	random_number[2]   = ((uint64_t*)S)[((i3+2) << 2)];                       	    \
-	random_number[3]   = ((uint64_t*)S)[((i3+3) << 2)];                       	    \
+        index_global   = (index_global  + 2) & mask;                            \
+	index_global2  = (index_global2 + 2) & mask;                            \
+        index_local    = (((((i + j)>>1) - 0x1000 + (random_number  & 0x1fff))<<1 )& mask);     \
+	index_local2   = (((((i + j)>>1) - 0x1000 + (random_number2 & 0x1fff))<<1 )& mask) +1;  \
+        S[i0]          = ADD256(S[i0],  SHIFTL256(S[index_local ],1));                 \
+	S[i0+1]        = ADD256(S[i0+1],SHIFTL256(S[index_local2],1));              \
+        S[index_local]   = ADD256(S[index_local],  SHIFTL256(S[i0],   2));           \
+	S[index_local2]  = ADD256(S[index_local2],  SHIFTL256(S[i0+1],2));           \
+        S[i0]            = ADD256(S[i0],  SHIFTL256(S[index_global   ] ,1));           \
+	S[i0+1]          = ADD256(S[i0+1],SHIFTL256(S[index_global2+1],1));           \
+        S[index_global   ] = ADD256(S[index_global   ], SHIFTL256(S[i0],  3));           \
+	S[index_global2+1] = ADD256(S[index_global2+1], SHIFTL256(S[i0+1],3));           \
+        random_number    = ((uint64_t*)S)[(i3     << 2)];                       	    \
+	random_number2   = ((uint64_t*)S)[((i3+1) << 2)];                       	    \
     }                                                                               \
 }
 
 
-#define INTERLEAVING_LEVEL 4
+#define INTERLEAVING_LEVEL 2
 
 #define sMAP(X) ((X)*INTERLEAVING_LEVEL)
 #define MAP(X,I) (((X)/4*INTERLEAVING_LEVEL+(I))*4+(X)%4)
@@ -174,7 +134,7 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t *inlen,
 	uint64_t i, j;
 	uint64_t i0, i1, i2, i3, i4;
 	__m256i *S;
-	uint64_t random_number[4], index_global[4], index_global_t[4], index_local[4];
+	uint64_t random_number, random_number2, index_global, index_global2, index_local, index_local2;
 	uint64_t state_size, mask;
 
 	//check the size of password, salt, and output. Password at most 256 bytes; salt at most 64 bytes; output at most 256 bytes.  
@@ -191,8 +151,8 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t *inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (__m256i *) aligned_malloc(state_size*INTERLEAVING_LEVEL, 32);	// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
-	mask = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32
+	S = (__m256i *) aligned_malloc(state_size*INTERLEAVING_LEVEL, 4096);	// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
+	mask = (1ULL << (9 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32
 
 	//Step 2: Load the password, salt, input/output sizes into the state S
 	for (j = 0;j<INTERLEAVING_LEVEL;j++)
@@ -224,25 +184,25 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t *inlen,
 
 
 	//Step 3: Expand the data into the whole state
-	for (i = 13*4; i < (1ULL << (10 + m_cost)); i = i + 4)
+	for (i = 13*2; i < (1ULL << (9 + m_cost)); i = i + 2 )
 		F0(i);
 
 
 	//Step 4: Update the state using function G
-	random_number[0] = 123456789ULL;
-	for (i = 0; i < (1ULL << (9 + m_cost + t_cost)); i = i + 128)
+	random_number = 123456789ULL;
+	for (i = 0; i < (1ULL << (8 + m_cost + t_cost)); i = i + 64)
 		G(i);
 
 
 	//Step 5: Update the state using function H
-	random_number[1]=random_number[2]=random_number[3]=random_number[0];
-	for (i = 1ULL << (9 + m_cost + t_cost);
-	    i < (1ULL << (10 + m_cost + t_cost)); i = i + 128)
+	random_number2=random_number;
+	for (i = 1ULL << (8 + m_cost + t_cost);
+	    i < (1ULL << (9 + m_cost + t_cost)); i = i + 64)
 		H(i);
 
 
 	//Step 6: Update the state using function F
-	for (i = 0; i < (1ULL << (10 + m_cost)); i = i + 4)
+	for (i = 0; i < (1ULL << (9 + m_cost)); i = i + 2)
 		F(i);
 
 

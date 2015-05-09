@@ -84,7 +84,7 @@
         index_global   = (index_global + 8) & mask1;                                      \
         index_local    = (((i + j) >> 3) - 0x1000 + (random_number & 0x1fff)) & mask;     \
         index_local    = index_local << 3;                                                \
-        S[i0]       += (S[index_local] << 1);                                   \
+        S[i0]          += (S[index_local]  << 1);                                   \
 	S[i0+1]       += (S[index_local+1] << 1);                                   \
         S[i0+2]       += (S[index_local+2] << 1);                                   \
 	S[i0+3]       += (S[index_local+3] << 1);                                   \
@@ -92,7 +92,7 @@
 	S[i0+5]       += (S[index_local+5] << 1);                                   \
         S[i0+6]       += (S[index_local+6] << 1);                                   \
 	S[i0+7]       += (S[index_local+7] << 1);                                   \
-        S[index_local] += (S[i0] << 2); \
+        S[index_local]   += (S[i0]   << 2); \
 	S[index_local+1] += (S[i0+1] << 2); \
         S[index_local+2] += (S[i0+2] << 2); \
 	S[index_local+3] += (S[i0+3] << 2); \
@@ -100,7 +100,7 @@
 	S[index_local+5] += (S[i0+5] << 2); \
         S[index_local+6] += (S[i0+6] << 2); \
 	S[index_local+7] += (S[i0+7] << 2); \
-        S[i0]       += (S[index_global] << 1);                                   \
+        S[i0]         += (S[index_global]   << 1);                                   \
 	S[i0+1]       += (S[index_global+1] << 1);                                   \
         S[i0+2]       += (S[index_global+2] << 1);                                   \
 	S[i0+3]       += (S[index_global+3] << 1);                                   \
@@ -108,7 +108,7 @@
 	S[i0+5]       += (S[index_global+5] << 1);                                   \
         S[i0+6]       += (S[index_global+6] << 1);                                   \
 	S[i0+7]       += (S[index_global+7] << 1);                                   \
-        S[index_global] += (S[i0] << 3); \
+        S[index_global]   += (S[i0]   << 3); \
 	S[index_global+1] += (S[i0+1] << 3); \
         S[index_global+2] += (S[i0+2] << 3); \
 	S[index_global+3] += (S[i0+3] << 3); \
@@ -133,13 +133,11 @@
 	index_local1    = (((i + j) >> 3) - 0x1000 + (random_number1 & 0x1fff)) & mask;     \
         index_local    = index_local << 3;                                                \
 	index_local1    = (index_local1 << 3) +4;                                                \
-	index_global_t=index_global;						  \
-	index_global1_t=index_global1+4;						\
-        S[i0+0]       += (S[index_local] << 1);                                   \
+        S[i0+0]       += (S[index_local]   << 1);                                   \
 	S[i0+1]       += (S[index_local+1] << 1);                                   \
 	S[i0+2]       += (S[index_local+2] << 1);                                   \
 	S[i0+3]       += (S[index_local+3] << 1);                                   \
-	S[i0+4]       += (S[index_local1] << 1);                                   \
+	S[i0+4]       += (S[index_local1]  << 1);                                   \
 	S[i0+5]       += (S[index_local1+1] << 1);                                   \
 	S[i0+6]       += (S[index_local1+2] << 1);                                   \
 	S[i0+7]       += (S[index_local1+3] << 1);                                   \
@@ -147,27 +145,27 @@
 	S[index_local+1] += (S[i0+1] << 2); \
 	S[index_local+2] += (S[i0+2] << 2); \
 	S[index_local+3] += (S[i0+3] << 2); \
-	S[index_local1] += (S[i0+4] << 2); \
+	S[index_local1]  += (S[i0+4] << 2); \
 	S[index_local1+1] += (S[i0+5] << 2); \
 	S[index_local1+2] += (S[i0+6] << 2); \
 	S[index_local1+3] += (S[i0+7] << 2); \
-        S[i0]       += (S[index_global_t+0] << 1);                                   \
-	S[i0+1]       += (S[index_global_t+1] << 1);                                   \
-	S[i0+2]       += (S[index_global_t+2] << 1);                                   \
-	S[i0+3]       += (S[index_global_t+3] << 1);                                   \
-	S[i0+4]       += (S[index_global1_t] << 1);                                   \
-	S[i0+5]       += (S[index_global1_t+1] << 1);                                   \
-	S[i0+6]       += (S[index_global1_t+2] << 1);                                   \
-	S[i0+7]       += (S[index_global1_t+3] << 1);                                   \
-        S[index_global_t] += (S[i0] << 3); \
-	S[index_global_t+1] += (S[i0+1] << 3); \
-	S[index_global_t+2] += (S[i0+2] << 3); \
-	S[index_global_t+3] += (S[i0+3] << 3); \
-	S[index_global1_t] += (S[i0+4] << 3); \
-	S[index_global1_t+1] += (S[i0+5] << 3); \
-	S[index_global1_t+2] += (S[i0+6] << 3); \
-	S[index_global1_t+3] += (S[i0+7] << 3); \
-        random_number  = S[i3+0];              \
+        S[i0]         += (S[index_global+0] << 1);                                   \
+	S[i0+1]       += (S[index_global+1] << 1);                                   \
+	S[i0+2]       += (S[index_global+2] << 1);                                   \
+	S[i0+3]       += (S[index_global+3] << 1);                                   \
+	S[i0+4]       += (S[index_global1+4] << 1);                                   \
+	S[i0+5]       += (S[index_global1+5] << 1);                                   \
+	S[i0+6]       += (S[index_global1+6] << 1);                                   \
+	S[i0+7]       += (S[index_global1+7] << 1);                                   \
+        S[index_global]   += (S[i0] << 3); \
+	S[index_global+1] += (S[i0+1] << 3); \
+	S[index_global+2] += (S[i0+2] << 3); \
+	S[index_global+3] += (S[i0+3] << 3); \
+	S[index_global1+4]   += (S[i0+4] << 3); \
+	S[index_global1+5] += (S[i0+5] << 3); \
+	S[index_global1+6] += (S[i0+6] << 3); \
+	S[index_global1+7] += (S[i0+7] << 3); \
+        random_number   = S[i3+0];              \
 	random_number1  = S[i3+4];              \
     }                                        \
 }
@@ -178,13 +176,32 @@
 #define MAP(X,I) (((X)/4*INTERLEAVING_LEVEL+(I))*4+(X)%4)
 #define MAPCH(X,I) (MAP((X)/8,I)*8 +(X)%8)
 
+
+static void *aligned_malloc(size_t required_bytes, size_t alignment)
+{
+	void *p1;		// original block
+	void **p2;		// aligned block
+	int offset = alignment - 1 + sizeof(void *);
+	if ((p1 = (void *)malloc(required_bytes + offset)) == NULL) {
+		return NULL;
+	}
+	p2 = (void **)(((size_t) (p1) + offset) & ~(alignment - 1));
+	p2[-1] = p1;
+	return p2;
+}
+
+static void aligned_free(void *p)
+{
+	free(((void **)p)[-1]);
+}
+
 int POMELO(void *out, size_t outlen, const void *in, size_t *inlen,
     const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
 {
 	uint64_t i, j, temp, temp1;
 	uint64_t i0, i1, i2, i3, i4;
 	uint64_t *S;
-	uint64_t random_number, random_number1, index_global, index_global1, index_local, index_local1, index_global_t,index_global1_t;
+	uint64_t random_number, random_number1, index_global, index_global1, index_local, index_local1;
 	uint64_t state_size, mask, mask1;
 
 	//check the size of password, salt and output. Password is at most 256 bytes; the salt is at most 64 bytes. 
@@ -202,7 +219,7 @@ int POMELO(void *out, size_t outlen, const void *in, size_t *inlen,
 	
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (uint64_t *) malloc(state_size*INTERLEAVING_LEVEL);
+	S = (uint64_t *) aligned_malloc(state_size*INTERLEAVING_LEVEL,4096);
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1ULL << (11 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/4;
 
@@ -265,7 +282,7 @@ int POMELO(void *out, size_t outlen, const void *in, size_t *inlen,
 	for(i=0;i<outlen;i++)
 		((char *)out)[i+j*BINARY_SIZE]=((unsigned char *)S) [MAPCH(state_size - outlen+i,j)];
 
-	free(S);		// free the memory
+	aligned_free(S);		// free the memory
 
 	return 0;
 }

@@ -28,7 +28,7 @@ john_register_one(&fmt_pomelo);
 
 #ifdef __AVX2__
 #define ALGORITHM_NAME			"AVX2"
-#define POMELO_INTERLEAVING_LEVEL	4
+#define POMELO_INTERLEAVING_LEVEL	2
 #elif defined(__AVX__)
 #define ALGORITHM_NAME			"AVX"
 #define POMELO_INTERLEAVING_LEVEL	2
@@ -361,7 +361,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		for(j=0;j<POMELO_INTERLEAVING_LEVEL;j++)
 		  crypted[(i+j) * BINARY_SIZE] = (char)length_cipher;
 #ifdef __AVX2__
-		POMELO_AVX2
+		POMELO_SSE2
 #elif defined(SIMD_COEF_64)
 		POMELO_SSE2
 #else
