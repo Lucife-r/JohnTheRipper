@@ -53,7 +53,7 @@ john_register_one(&fmt_parallel);
 #define MAX_KEYS_PER_CRYPT		1
 
 #ifdef __AVX2__
-#define OMP_SCALE 2 #to do
+#define OMP_SCALE 2 //to do
 #elif  defined(SIMD_OEF_64)
 #define OMP_SCALE 2
 #else
