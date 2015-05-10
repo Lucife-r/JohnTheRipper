@@ -35,19 +35,6 @@
 	#pragma warning(disable:4996)
 #endif
 
-#define __STDC_CONSTANT_MACROS
-#define __STDC_FORMAT_MACROS
-#define __STDC_LIMIT_MACROS
-
-
-#define SWAP_ENDIAN_32_(x) \
-	( \
-		 ((x) << 24) | \
-		(((x) <<  8) & 0x00ff0000) | \
-		(((x) >>  8) & 0x0000ff00) | \
-		 ((x) >> 24) \
-	)
-#define SWAP_ENDIAN_32(x)  SWAP_ENDIAN_32_(((uint32_t) (x)))
 #define SWAP_ENDIAN_64_(x) \
 	( \
 		 ((x) << 56) | \
@@ -61,21 +48,13 @@
 	)
 #define SWAP_ENDIAN_64(x)  SWAP_ENDIAN_64_(((uint64_t) (x)))
 
-#ifdef ARCH_LITTLE_ENDIAN
-	#define READ_LITTLE_ENDIAN_32(n)                (n)
-	#define READ_BIG_ENDIAN_32(n)     SWAP_ENDIAN_32(n)
-	#define WRITE_LITTLE_ENDIAN_32(n)               (n)
-	#define WRITE_BIG_ENDIAN_32(n)    SWAP_ENDIAN_32(n)
+#if ARCH_LITTLE_ENDIAN==1
 
 	#define READ_LITTLE_ENDIAN_64(n)                (n)
 	#define READ_BIG_ENDIAN_64(n)     SWAP_ENDIAN_64(n)
 	#define WRITE_LITTLE_ENDIAN_64(n)               (n)
 	#define WRITE_BIG_ENDIAN_64(n)    SWAP_ENDIAN_64(n)
 #else
-	#define READ_LITTLE_ENDIAN_32(n)  SWAP_ENDIAN_32(n)
-	#define READ_BIG_ENDIAN_32(n)                   (n)
-	#define WRITE_LITTLE_ENDIAN_32(n) SWAP_ENDIAN_32(n)
-	#define WRITE_BIG_ENDIAN_32(n)                  (n)
 
 	#define READ_LITTLE_ENDIAN_64(n)  SWAP_ENDIAN_64(n)
 	#define READ_BIG_ENDIAN_64(n)                   (n)
