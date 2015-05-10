@@ -1,4 +1,5 @@
 // Copyright (c) 2014 Steve Thomas <steve AT tobtu DOT com>
+// modified in 2015 by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
 
 #include <cstdlib>
 #include <stdio.h>
