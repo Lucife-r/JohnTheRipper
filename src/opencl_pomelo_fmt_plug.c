@@ -29,10 +29,10 @@ john_register_one(&fmt_opencl_pomelo);
 #define ALGORITHM_NAME          "POMELO OpenCL (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT       ""
-#define BENCHMARK_LENGTH        -1
+#define BENCHMARK_LENGTH        0
 
 #define PLAINTEXT_LENGTH        125
-#define CIPHERTEXT_LENGTH       600
+#define CIPHERTEXT_LENGTH       512
 
 #define BINARY_SIZE             257
 #define BINARY_ALIGN            1
@@ -354,7 +354,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	    next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
-	if (strlen(i) > 512 || strlen(i) == 0)
+	if (strlen(i) > CIPHERTEXT_LENGTH || strlen(i) == 0)
 		return 0;
 	while (atoi16[ARCH_INDEX(*i)] != 0x7F)	//
 		i++;
@@ -401,7 +401,7 @@ static void reset_(unsigned short M_COST)
 	release_clobj();
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 64, 0);
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 100, 1000);
