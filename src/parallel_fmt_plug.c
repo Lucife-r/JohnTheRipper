@@ -24,9 +24,9 @@ john_register_one(&fmt_parallel);
 #endif
 
 #define FORMAT_LABEL			"parallel"
-#define FORMAT_NAME			" "
+#define FORMAT_NAME			"parallel SHA-512"
 
-#define ALGORITHM_NAME			"parallel SHA-512"
+#define ALGORITHM_NAME			" "
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -333,7 +333,7 @@ struct fmt_main fmt_parallel = {
 		PLAINTEXT_LENGTH,
 		BINARY_SIZE,
 		BINARY_ALIGN,
-		SALT_SIZE+2*sizeof(size_t),
+		sizeof(struct parallel_salt),
 		SALT_ALIGN,
 		MIN_KEYS_PER_CRYPT,
 		MAX_KEYS_PER_CRYPT,
