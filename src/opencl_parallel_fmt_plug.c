@@ -295,7 +295,7 @@ static void init(struct fmt_main *self)
 	    warn, 4, self, create_clobj, release_clobj, BINARY_SIZE*2, 0);
 
 	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 100, 1000);
+	autotune_run(self, 1, 1000, 100000);
 }
 
 static void clear_keys(void)
@@ -440,30 +440,30 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
 		CL_FALSE, 0, sizeof(struct parallel_salt), saved_salt, 0, NULL,
-		multi_profilingEvent[1]), "Failed transferring real salt");
+		multi_profilingEvent[0]), "Failed transferring salt");
 
 	if (key_idx > key_offset)
 		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
 			cl_saved_key, CL_FALSE, key_offset,
 			key_idx - key_offset, saved_key + key_offset, 0, NULL,
-			multi_profilingEvent[2]), "Failed transferring keys");
+			multi_profilingEvent[1]), "Failed transferring keys");
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_idx,
 		CL_FALSE, idx_offset,
 		sizeof(cl_uint) * (global_work_size + 1) - idx_offset,
 		saved_idx + (idx_offset / sizeof(cl_uint)), 0, NULL,
-		multi_profilingEvent[3]), "Failed transferring index");
+		multi_profilingEvent[2]), "Failed transferring index");
 
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
 		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
 
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[5]), "failed in reading data back");
+		multi_profilingEvent[4]), "failed in reading data back");
 	partial_output = 1;
 
 
