@@ -34,7 +34,7 @@ john_register_one(&fmt_opencl_pomelo);
 #define PLAINTEXT_LENGTH        125
 #define CIPHERTEXT_LENGTH       512
 
-#define BINARY_SIZE             257
+#define BINARY_SIZE             256
 #define BINARY_ALIGN            1
 #define SALT_SIZE		64
 #define SALT_ALIGN              1
@@ -42,7 +42,6 @@ john_register_one(&fmt_opencl_pomelo);
 #define MIN_KEYS_PER_CRYPT      1
 #define MAX_KEYS_PER_CRYPT      1
 
-#define STEP 0
 #define SEED 256
 
 
@@ -55,85 +54,36 @@ static const char *warn[] = {
 	", crypt: ", ", xfer: "
 };
 
-#define MIN(a, b)		(((a) > (b)) ? (b) : (a))
 #define MAX(a, b)		(((a) > (b)) ? (a) : (b))
-
-typedef struct {
-	unsigned int h0, h1, h2, h3, h4;
-} SHA_DEV_CTX;
-
-
-static char *saved_key;
-static unsigned int *saved_idx, key_idx;
-static size_t key_offset, idx_offset;
-static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_real_salt,
-    cl_saved_rest_salt, cl_memory;
-static cl_mem pinned_key, pinned_idx, pinned_result, pinned_rest_salt,
-    pinned_memory, pinned_real_salt;
-static int partial_output;
-static unsigned short int *saved_rest_salt;
-static char *saved_real_salt, *output, *memory;
-static unsigned long long int MEM_SIZE;
-static unsigned short ct_cost, cm_cost;
 
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
 	{"$POMELO$2$2$salt$CBA3E72A1F3CAD74AE0E33F353787E82E1D808C65908B2EA57BA5BDD435D3BC645937A1772D1AA18D91D7164616B010810C359B04F4FFA58E60C04C6B8A095DE4500C18CD815A8960E54B0777A3279485EC559BE34D5DBFBF2A66BA61F386FC8896A18D8", "pass"},
 	{"$POMELO$3$3$s$8129F2646C7583D996A87937475F4C10747F4A6D23BB65B3B28AD1F61C5EFCA58969CE8472B49135BB870F0264AFB3E7AE2D9FD798C2852C60543ECFB06528CCC8390F749803ABF2D8F67DB4F4B07297174DF7628DC1EA58DB862DF4ECE41F1E829550E8DC2BDD6B4F44431B21A9C5657162E8BD2869A79F7B23BAD01D4417957CE5439691DA82F81B018CAB9F57B38AE19F2F307C849D2FE3A7CE38081175405DD71E08CA804D5DBEC6FAA623ADCFC67445DD0336A3F9BA91CF1EB7B0239138DD23FCB1989D2BF2EADADE2DC4639E5B811514A2885D7535C707D3003BDCCE59A9B5B9B085385B044EAE8527A31C5972B1A5F3F17F522899B8F0B2BF9036D697", "home"},
 	{"$POMELO$5$5$zxc$CA9CC9943988222B2BBD837509382BE8833C5B462D2FDC603D38CDE1A7E74202C30CA726B3843E296C3FD06C8463C74E38868F839B629C7C148BBFB417D523673696B8A88D2C704927132ED43EB1F621BCA6C48535A2C28623D7EF0CD23EDB5305E9A564", "qwe"},
-	{"$POMELO$3$2$salt$B67B3B3C000A400DC6A2473B736F00490E09CE307C6606269A212FD0DA5643562EFD5A99C215949F6721D814AD85754399043ED6587924E7656018D57A03BD68F98927D064ECAA80D269884F247A45B38AAD65D8E7AFEB4E486CA226BC9BF5994BE84781A2EC3336FEA9DED0A1F2D4011C6D988AE26A6753194F53E4F0649249AB1E39A3139A0BD04018F3A609FC07EDD7B81F50299785567AF5ADD9B1A80F3FBBEC960775CD7932D98F8B375F2F29E694A20B56FCF969DBA59D6C33977243E29DA1304B13F27F156EEE3BBE064A8D9755B4D2242F65CAB893D19E90D21E73E6C8ACA9340E0270BB93E395B3AD2DF7B789281A9C1D8595F889868855F6AC38", "password"},
-	{"$POMELO$7$7$S$526089AF63BC802A2F6A29CFDFC67A8CAFFC173B8C11A5629065A51A03E35DD4D85B84879D90AB92D1A58305A95AA120683661E566DF4E1008099C3E252FC3F3BF1EABD3B96853A28D5918D569DBF0B8815D8C78050F2C19BE17A8E2F8F4D09957E82AFE36CF681617A63795BE488F371DA60947F184EF7F8B10547D8B51E33CFE609C8C8A893149B13FF7B065DB5424C812E66F794D7286C1CBD7CF1C2E4D4EE65E2AB2410C1860D24921BCC3C869BF642F74CD3FAA7A1868D1BAB9FE4732FBA5AB8F7CDAE65E9FDF1F864612DDF40C8FD236CB8EDA7EA89962EFA0B4DFA77B69BEEA78C37EA263C33CFA2578473A8E95FF0D3135E24D49300DF1C394A82F60", "pass"},
-	{"$POMELO$3$2$double$6DB17CE2C801598F34DB", "float"},
-	{"$POMELO$2$3$admin$224E2359D8590F0EB4719D06E42CD4903C711BCB4AA4661F179EB9FBB7D567A2A595C13598EEB47BF5D4737B034C73EC1C7F9561DFF6C6E64A492F180CD9DFF90D82DB281AD41E67D3CE7A42C0F20E3BCF4273456F2C19EF7ED2029ECC112ECD6DE2A4F9985167602520ED576F33606784F5D8440F6F3621764898DC27828C9F6A5F1AE28EE0CA80CED3AF9309DDF472D15325B0F80549428800671BB7915C5057E96783285EAB6EA682DEFEDE188AAA8BDA280F54F899AC162AE475724F54A26996B5504D65768F", "admin"},
-	{"$POMELO$2$2$admin$9EDF16E5F280D7DDD5294AA6C67D79CF29DE634E1B24719FBE61074CE1039B49E20FA59C864D541A58906917F9553EEB81086EAAC13F5543A6F2110B963386A268C84B93ABABA7FE7803BC55493D2325F01A442D315DD65B6F76BE904B2300EFB2CD93BEAB5162DA381965B87EDC9C1A1B483D24F505832FCC959EA89788F06EF7EDE640695C549C3CED98486530DCB51D2652FF2538CA7730BE9F9CDB2BADD99D6B988B377E98FD808B7F8624AAD6DC3876F33CD656ABAC7D742183AF7BB003C9B16C268C409197", "admin"},
-	{"$POMELO$3$2$admin$2BEB5C91261986C4BC83DEAD822099BEE8B6E72DE47D478D1D9DCCD92CFD171782C54C613E9114359D81877DA2F4C0183B76DDAB33432AF6C08F0D20432811BA4F55CEA1EAE18A8933A533B6F0F9D14D64EB8C7AE74104F7A50EFF2DBCACB53DF0D790614A144D6CC6988B1973E255C3E824A95FA7AE796A2009710F8AA4C82D2AD9998ADE58584B6DE6BE4B52BFCDA601DE8B40C060A9DBFF6E141632EE9F5AC01ECF62D0299585E9E2882165A287461F8EC19AF6E42A8249FFF1B904CE9332BEDEA5191DA85DFA", "admin"},
-	{"$POMELO$3$4$admin$04A832CA5BBEE5A0989EC4EE3F3A5A3E33499754076AF19C548C5C2656109610B0EF0E81D97D96EE35C672635A06A00B65BE83FC0C72E303ECA5340C588A27AEAC29A3F75A2BBA95B21D5E8B874FAA92F570A0D112DEDAA5A9971DDE25ADA017F963FABCDBC5E3E19C3170AA009D305906C68A5DF9561CF5CC8208484E4F21DC270B9C55BD026C3B2ECA86BBD8B8045EEE926E57A2BDD9B6DEC69357ED2CD61F40741B258A0EBFC170A2D687017FB15DDC667A0394C8D8189213F425BD3E9145D9858373074F50F3", "admin"},
-	{"$POMELO$3$4$admin$F245EBF6A345A0813F4CDDEF1635E4A784D5AFC0128C5E852EAA352AA52D2161D53BA52FADC63A05BB511D9C75B5A57E04B746EDD7F9D6DB605E9C22FC38667D9957F48E846BA59C908E4692E404E23EBE1F6284ACF6AE2FC104B22093728F06E15F9D1E940FCDE4B1CBE85E9BC8F888195B93D67BD2F2B6F1E70F3B99F9D5B89E54205A47163DD9EC1155B6BAAD902E6D29DD96859C0E7821C832A1469E95E099356AA372DCE208FA476205D46877FDA7378A6F34583187F69C7D77C7A480E46CCED7C7FFE8B07DD523C58710C563E64F43B30D02E131C24B2B2C4350F7CC357AB001885BA61663850160C4C0D826B7A8D185B36BF6B775B8FD", "admin"},
-	{"$POMELO$4$4$admin$FAFDDF03DF15D158073568AD154989F3BE2A14AC792CE747E2969FE2CAD9A0083D1CCD80B37F42691F1425911D231212EA127332CB6AC3296E645905F2919D73E6D46934D7C0E931AE6863EA1F52701DCA34677B101F3347BEFD272ED4E36CD62330939922557F55A73A2408030B9639D8961A5B5742A1256E38F1DF04C58C54DB3089DBA7E4ED39E229FA0C7DBCF91DDB1773744B43F38EAF7F45E637957D4904663A3ABE8734DDBEFC43CEE21F7B05E28FEAC2C096C3CEF94C4AEC352AE2A429B062505F0434FB94B50D10CE1B2BBD262BFC32617D6BFE78F41591AB35F24EC2258C30C9E090D6FB6C3D86B3C819F89B83C6CCEDC6F6583747", "admin"},
-	{"$POMELO$0$0$salt$FB45BE55373AF01D2B3B8F8FFAB3EB69CA6B51B09B912A1F41FEE6DBC473E83F4B3BF1DC6255284BFEAC4F2D7CBF19827E3B55ABC9D11923C92648CA117BB663CC553755FE2C33E59BC56DCD78E3D7DAECFFDDB6A6B16CBECC85EED402DC98727FC107AC268B7051C269FACA3623CB4F3AF9A1CBB26C46A6", "john"},
-	{"$POMELO$0$2$salt$43AFD15860EC44200CCD3B88B6AC2CAE685B91550E6F91451A10765C6802EF153E7BEB3B13E7D74E1502E68CE87B517D0C629CEE9712C60AE8419F8808321D07D8EDDA8B877D856777912B6F33BF4F707ED1D6AC5BF3ACCBB8C1CF9E031355AFD6E5663D86422404B5F8238CB78F955E1B56F837AEDBEF78", "john"},
-	{"$POMELO$0$4$salt$947DD74EF6A8C0B1D4C38D2E53D084D4B49C1DA2FE1396D06C396583755096EFBE12C9052E48075B0648A04F8D5F09925177D9EE25A7AE2D97DBEF4B9633BBDACCA339519C7C5CB874B7662EEC729AC6BC2F56B2C34CC31CD40EF74598A46B471EE2DA151BC8E68F3833B89CD0D1CCB916670AECB46E53C8", "john"},
-	{"$POMELO$0$6$salt$E6EC605ADA87074F76FBC14313F725397B777C40F0DD737160B017FA1A4D02FB30EFB432080F55A338F2118D06FC433A0DB2341559D50D443B666DE7ADE8A029A9F82312F9145540A8025D3F0E0B9F1E089B2031A42AB27C813A3F5056763D5B069780C10D5333418698EC3CD3051B10F4F46DD68E06E5F0", "john"},
-	{"$POMELO$0$8$salt$FF9D665B35C20D075C3324763DB0073874FEACA6CA3F13C1EC1DC853EF2C158F666A7C59C9520B9352BCE1A5E6A708F1322C69CC8CBA5CA314EA4880CBD2A85989398748774F2B6ACF7794FA5BE59FBDB73B90ECE9670BDB13781B78EBA7C805AE3948C5053056B3FCAA26FFFDD8A0E17479487E404A2B80", "john"},
-	{"$POMELO$0$10$salt$ED64A733E85F7E3BED946EBED1834C8AED7880FD7A563C78AB0882BFBC07887B3FB0DDDD4EFD191676B756595B4D0E79A0BBE3B41342456609553BC9F3F96A0341E19C7A8E844F2E25FFB2E0CA157E179435E6E9A08B6CC194AE7C89E1673D63FFA8CE8B39E371443CBB4C0FB66B725C9F6E4BEC27CDD571", "john"},
-	{"$POMELO$2$0$salt$7DD58B480AD2A2A401BFF404102E629304056FE542CFAD951934FDD5C3897034A73E426CEDE9BA4EB996399A1CB0F34D555A2B925ACD7D8065F9488F07EF4B74A922E61F027B80F09D7E8A1F15F566FFE64579181BE1AD040F6EB0EBA33CA81E128B9445504A6D7B204001B7F0A07AD2C121B17CE91F8900", "john"},
-	{"$POMELO$2$2$salt$40D1914C4B9C271953813024B57442CEC70B93EA231FF75EDC28D1B0DD1850873AEAE36781295B953EEB78AD32A025851E0621D4594804F1B539A07BC954A4E761B4B287D41BDAE2699168C5622EA958E8D53C513DD69A34AC72CC0E829F0F2FDE4ACA2303BAFCE9CB8D6D990E33833EB86651DB3B35AE5C", "john"},
-	{"$POMELO$2$4$salt$E25AF39402A380FC0E1AAB49A9580FAAD961BB05F1E39EA03B282057A05A8D2C5134E2A79D7045F6854E0E4111125E576D7A7A6AA89715E2073BB61947B275509AC3C70021D75FC86D81EB129A19AC385FBE825B107192CD2221170BED527712FACB140FC1A4DF11752FA067546E659D91B5BF7F13ADDABF", "john"},
-	{"$POMELO$2$6$salt$B86750E8FABC6F5FA039A3D799065B3C164B815781B50093753A11E095417B1986F401D23D9D8AF04386E0FC8B8EDFC09C4224A91C6D6059A28605BB8D9159256E456F0C5C2B297A7E6505DEB5C0FD499247686C420F88DF2F5923F8B3255590DBE35819602FD23729CA2B825EBA6F281C98A8807998FB06", "john"},
-	{"$POMELO$2$8$salt$B3852DE81C2C26A62BE185E20DBB0D06A336BEC23EC344D1B23639194C88AD4487E2ED3DC8A9DFF8AF99CF1095231D21FAA80C02C46686543A4EB23BB897C3CB26A73F2D6A54FFB5737009F4F10E0FFEDA77FEFD78DD168369EBFDC35136337B0B1EC392137DA11B8BE5B66B76E36BC3DCA445E0D2228BF9", "john"},
-	{"$POMELO$2$10$salt$2436FB1ABF2755EBA6E9F8DB4ABE24A2E3AB429869AD38FC34C076EED0DA93E22C9A2F04D6F690ABD560CC0EDD2E8CC30964E04F53FB87664CCF011163A8FDA0C1C07E96C49881253014008AC8708505553C47B5252CBA2A1E9ADC0BD6E155D84EA4417038873FFEC38F1AD9F060767B680A36F977E5247C", "john"},
-	{"$POMELO$4$0$salt$B348B8FB4F865CFD788EB0E28033534BB82EF043A9A32C853EBD20D65415EF3F3878668FB37A5970C89750F0D33C1B470ED9FF2277E46AF80B0ACE55EBE6A19E028ABE8CE5468DD41861AE276598F368ADB2E757160A0E690E343711A1E8F494EC0B12F18E8C28E6C233863049093283A8AF6EB68B3FE695", "john"},
-	{"$POMELO$4$2$salt$5090878B390A2D393B8C8FACD1DC6F969DD2B0514CFD43C036CD38FD9DD694DB667D26AB1847AB0D1E1C5A65F9F734E09CD1FF1AEFF5592F4C522D80B58E3607DD1E29796ED4B9AAC5F877C1D89BA0BD38CAB3A0C32F14618BE084888F72DBDF5DD87EB3A9D03A55EA7DE9660DA27EBA5AE77626F3E462DA", "john"},
-	{"$POMELO$4$4$salt$35BF05829DDDBEAF571992978F49380A8DDA48692D4C76FC0D26CCCE8FB07AAE2AF576DF80448723C44EAF5404A3A080A02C2DBB926D5506DAC340E8DEE739CF705E0A3251CCC80A6CE7E17EF6723C9082D690F4D015C0836517F20D054734A0AF723CA767DC8A755653532076FEC79B13D5E6B7950DB05D", "john"},
-	{"$POMELO$4$6$salt$C2A38E2DFE87BC946E408245D47F07C619F8CD8D3084AB9C9F872B8D8B462A29E41DE8267C97A3B6531B35E2BB9ADC55EE22A5347C415E7E46D2948E93B5DD77D643BCF5FF7BEEACA9BBAFEA41FC1BED78A578C397AF68A48F0B1E61A5AFC6BD1E71DD9358D0435B4F9690DD43DE27984D19FE69D79E6501", "john"},
-	{"$POMELO$4$8$salt$F2BFEB15FDEE9D582577EC23C6CE338C89FF10EC83ED041B85E41478D9B3F3E16BAE4AF420A4567583BD2338438966C27C75337E560E98E911C0077144499ED6517C7240C96A4F495CDEC8861FFDD02AE5B4A47ED061C6872ECAC02B7654F9D7338FED30FFBE9BFCC54BC539ADE7E8761BDAE966700E2DD4", "john"},
-	{"$POMELO$4$10$salt$B8FB2F6B96431814C0E44E10A9567D816467A891C1184CB3F1A68CD78B6325CBB9D09BB8569E86795C17105C0D5538631DB851F09F7C04A224EF304305BBA9B3B2E2C0EBCEDEB0FD03D29435517AFE30ED7AE112D90E3094352BEC9C55B7469059D23DA635BF23C9F7F2789572379707CEF6162A30222CCA", "john"},
-	{"$POMELO$6$0$salt$7366FF85F67D3E8614DD5A8643270BBE8E57A8EFAE15E1885CFB1E4A19F64A2345923FBB9CF18957CE196543A37C0107E7C91A0D9921161B64A5315B3C0046993E1EE9F5AA0BADE8EB5FEF709CD358ACBB0B7D2179B4A860855C117CE07A8A955B96B32C7F6045CBD5BEE921905EEB508C71FB960937B684", "john"},
-	{"$POMELO$6$2$salt$5C692A0DF42A2EDC57BCA7C501864DF72C3C1FF065D7FB87D1F3648B30FD529FFE42188CAB95DA7E205EBF8146124D11F2BC942025844B71C1DECC53BC49DCC02AEC9D678D0AA69E1E7C00A83DE9548EB583127729A4C5C56213FD8C994CD6D15B979639E76EF1C4DFB75B7E95D9F3208D27353B69094242", "john"},
-	{"$POMELO$6$4$salt$452FFA8DBF6216FC356A0577A46BE11C548097F00A7E6424DABFF466591D0D146E93B1ABBE977FF825466659B8D3B5A3632D37EDA28B669A8D93AA413543FD5B8DDC9CDE83CDECF6325196607D10CC0255B5D8F392A38ACD93278D307B1ED53D63776CC7CDF62338203E8E9E98AF845740C671D5AA71E2EC", "john"},
-	{"$POMELO$6$6$salt$01957C5CFE97528F80212352A81B94338C904C0305674903EB5719371F1FF2A14DE285ECBB9D5B562877417721E9D8E1453D3068BD8BF1CBC8C5896D2B41F79A1506392319AA203A97E9D814483D076040C0F47BE0A153D3559E44B5321E1EE9D64BF8621BF13B45A0F426AF1E81D901C0650DE823C64671", "john"},
-	{"$POMELO$6$8$salt$66884F8A9DE958BBA5AFE84DBD2AD4219F01AF340C72A344FB7FF2FF6D1B5491878C6C92F08300F49721FF3080D66DD1C2BB48223801B8E89CE6DCFC4449AC1ADE7808B1281E317F03A940EEF854E03E3ED5799D756E0CAAE245FBB2B944B3A258DDE848F51F9C1A210E0B62DABEFB7D86B5CE7E7E655841", "john"},
-	{"$POMELO$6$10$salt$7E8CB42EDD5A4347D414058CB409CAE0C78A7EA8A47FA72CC8789241BBBBC58C9410F07A3B85A5333CF608F12C2468D5D385BA0CA3902D460B58E5EBF9F2833BFA7ECD0CD696436CB6FA2AF83715763AE254F02F97EDAE73408EA29EA0DFF2D7120A457B07604D665D86001F432762969972695B840CE770", "john"},
-	{"$POMELO$8$0$salt$471A71770D52771EE5C5828AC141178D15F3B661228330E9B496444862ADBEA54B6431B7C5401EF2D27A5C02A691DFDD46720DD1B66ADAF18CFAE7475F315FE0CECE9ECCB8A2465465BAB061A039F0FC172E4FC3D61E32E48DA82999E293BDF8D35D55D9F5D0F62010F6DB768ACD71110ACC49645209015B", "john"},
-	{"$POMELO$8$2$salt$2C27349E82ABB9941D69B009AE528F1A33441044F770A1A850BB91636A62969F8A1A39C4DCA76217CE8C25B8BDCC4687DEB581871B99E2566384B033FDF05F4FF85C2C1DA3A64C582DE336DD2BB9060A088434255C8CCF052FBB3D3EAC064218539DEF3D30479920E323321288B009CA572F84D38A5F49D9", "john"},
-	{"$POMELO$8$4$salt$358330B3CEA60476160AD365A611D9DCA6EDF83A245EFA01B6D220751B6CBA3F20D17779F6E414671EA9FC92EC059E65E6CC4721673F0098CAE4C3481F75C9EB719546350149948C9831472C4A7E29AD328C4A25BED8B5A078C2EA0B9CCC99E81C31BE4062AD2B81446B0B0B7EF4B73E93AB2624933E97F1", "john"},
-	{"$POMELO$8$6$salt$698739009E4D2E9702E379265A54AB068404B265A9E3D2A7623DDAB747D635848CFD9CAC198C44D9E20D5B85350C61E3C5BD50A42AD5CDD010DAA3ED1E938F93037D24639EF457B50DD596FF5A534F74885D21F2238F80AA83BCFC85E8EB7A5467E8F5B0538ADB211F786C16D1CBE1DB5E693A68A9436903", "john"},
-	{"$POMELO$8$8$salt$379AEA84B0A24F4B3953F6DCF1DFD1D840DD084C8B3FCAA26CD54BF9647E57E08608838117D736B12793F70002709791F25DF20E692A0AC55DD3838FE46873EB86245918D30B4484D750264BF738D4EFD61C4648C4FCADC7CDC75AA8975FEFEA884FF7773A69BC496AFA38C099AAD3E7F63DA35424941A15", "john"},
-	{"$POMELO$8$10$salt$66449D1FAA813E4F5AE6CEF750C9223437DF9708B454FDA8D9E95A8C31DD520F14ED225FF3C6CBD082BC3137F2A4E38C71107798ADEBAE0E602434E7501CD7727A9B55995EC4093919A2D613594C982A2C62B4BA1DCB3ABDE28923A291A82D0CE20B5F820B9F1D74F77B19ACB257E969441D0588DEB3A85D", "john"},
-	{"$POMELO$10$0$salt$DCFD72626F090445736CD6BCC6C38901D5680A2CE00140D6673101658F7656B363670C60598865EA3B399DF21B8F986460C8CBDBA2910DDEE1AF32F38C9EFB76859B00874E9CB67FBF63BA985F1FD9C9B0544455AA50D0C5C5709D25C38AC5CC8DA9AEF0C92542118DFA9D43D8556DC3C893961B6E3E1A5A", "john"},
-	{"$POMELO$10$2$salt$F700F626A44F193A6130747341E329B52AF0F3FA2412A7629E5F963C1FC5B999DBAFAF8E560CE9E29403A4400D7C6FE64CD472A146DAC6AEA0B51998FA1983B3A0B11B9E36F31AC529C221B0E55B9F54C62D95330B52A8B5BB328EE5DF6278C3FD6146CC1643C3B751BA04EC497BE16337469E7233B92FFE", "john"},
-	{"$POMELO$10$4$salt$54887386499F46D7057CEFEF887938EDC08E09135EF0571C128B203C54D311DF24720964A12C051B845248D49AE789FD57A0620B1169653056E2F3290928EE6BB9E172DAC5FABF5D47FA539463627543A1F72CDB1938337C533DFD4C273A0CCF5D678130CE49DA1CE499EA9D731603E924E01E0CF2ED4DBC", "john"},
-	{"$POMELO$10$6$salt$E37A553D06BAABE320A3495BE39E040780B904AE656B787F002074936DF599570A86E62809757B01A40CACEC69EBA690EC82CA7E0F7A9E7B1A1F9FF2CE04687A5230B45EDBFFBF4A841EDC60419CAA03575590446C0701F73A107F6525D296A0E95DEA4920B824DBF535ADFC3BB5587D1834C64924952AB0", "john"},
-	{"$POMELO$10$8$salt$403EB5B7C5DE53D640AC963171EB4C2B9CD63BFEE4C4EB1F85481EBB4B3BA5FF1ABAA2545C89902B12831FB205817BE45E7D0CAD4D904B23860217A33E8B147F6465EB6B371E54B2E54D613B8A60CCEE17B43699412674816A615B7616481FA43D14CDE853938B614EDF238405881522BFD76B99753D8B1C", "john"},
-	{"$POMELO$10$10$salt$82266DC559C60543008372E2B65A7EB7464C35CB6B99FC913C776123947DDDCF97623C734B31AF7221FFD77D66462D9BC80623728CD1372254B86777AA879D386FD1FC75953880DBC8ED12F4488530E82BDBFD240556DA144A038CEDFD60783FDE22EBDEB0BBEE7B7E440DEF1945C426DF52EEFE7453DC15", "john"},
 	{NULL}
 };
 
-static char *saved_key;
+struct pomelo_salt {
+	uint32_t t_cost,m_cost;
+	uint32_t hash_size;
+	uint32_t salt_length;
+	char salt[SALT_SIZE];
+};
 
-static int length_cipher;
-static int length_salt;
-int clobj_allocated;
+static char *saved_key;
+static unsigned int *saved_idx, key_idx;
+static size_t key_offset, idx_offset;
+static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memory;
+static cl_mem pinned_key, pinned_idx, pinned_result,
+    pinned_memory, pinned_salt;
+static int partial_output;
+static char *output, *memory;
+static unsigned long long int MEM_SIZE;
+static unsigned short cm_cost;
+static struct pomelo_salt *saved_salt;
+static char *saved_key;
+static int clobj_allocated;
 
 
 static struct fmt_main *self;
@@ -162,6 +112,8 @@ static size_t get_default_workgroup()
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
+	if (clobj_allocated)
+		return;
 	clobj_allocated = 1;
 	pinned_memory =
 	    clCreateBuffer(context[gpu_id],
@@ -184,15 +136,10 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, PLAINTEXT_LENGTH * gws,
 	    NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
-	pinned_rest_salt =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR,
-	    4 * sizeof(unsigned short int), NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 
-	pinned_real_salt =
+	pinned_salt =
 	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, SALT_SIZE, NULL,
+	    CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sizeof(struct pomelo_salt), NULL,
 	    &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 
@@ -202,14 +149,9 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    PLAINTEXT_LENGTH * gws, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 
-	cl_saved_real_salt =
-	    clCreateBuffer(context[gpu_id], CL_MEM_READ_ONLY, SALT_SIZE, NULL,
+	cl_saved_salt =
+	    clCreateBuffer(context[gpu_id], CL_MEM_READ_ONLY, sizeof(struct pomelo_salt), NULL,
 	    &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-
-	cl_saved_rest_salt =
-	    clCreateBuffer(context[gpu_id], CL_MEM_READ_ONLY,
-	    4 * sizeof(unsigned short int), NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 
 	saved_key =
@@ -218,17 +160,11 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping saved_key");
 
-	saved_rest_salt =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_rest_salt, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, 4 * sizeof(unsigned short int), 0,
-	    NULL, NULL, &ret_code);
-
-	HANDLE_CLERROR(ret_code, "Error mapping saved_key");
-	saved_real_salt =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_real_salt, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, SALT_SIZE, 0, NULL, NULL,
+	saved_salt =
+	    clEnqueueMapBuffer(queue[gpu_id], pinned_salt, CL_TRUE,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, sizeof(struct pomelo_salt), 0, NULL, NULL,
 	    &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping saved_key");
+	HANDLE_CLERROR(ret_code, "Error mapping saved_salt");
 
 	pinned_idx =
 	    clCreateBuffer(context[gpu_id],
@@ -267,30 +203,25 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 2, sizeof(cl_mem),
 		(void *)&cl_result), "Error setting argument 2");
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 3, sizeof(cl_mem),
-		(void *)&cl_saved_real_salt), "Error setting argument 3");
+		(void *)&cl_saved_salt), "Error setting argument 3");
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 4, sizeof(cl_mem),
-		(void *)&cl_saved_rest_salt), "Error setting argument 4");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 5, sizeof(cl_mem),
-		(void *)&cl_memory), "Error setting argument 5");
+		(void *)&cl_memory), "Error setting argument 4");
 }
 
 static void release_clobj(void)
 {
 	if (!clobj_allocated)
 		return;
-	clobj_allocated = 1;
+	clobj_allocated = 0;
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_result,
 		output, 0, NULL, NULL), "Error Unmapping output");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_key,
 		saved_key, 0, NULL, NULL), "Error Unmapping saved_key");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_idx,
 		saved_idx, 0, NULL, NULL), "Error Unmapping saved_idx");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_real_salt,
-		saved_real_salt, 0, NULL, NULL),
-	    "Error Unmapping saved_real_salt");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_rest_salt,
-		saved_rest_salt, 0, NULL, NULL),
-	    "Error Unmapping saved_rest_salt");
+	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_salt,
+		saved_salt, 0, NULL, NULL),
+	    "Error Unmapping saved_salt");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_memory,
 		memory, 0, NULL, NULL), "Error Unmapping memory");
 
@@ -305,18 +236,14 @@ static void release_clobj(void)
 	    "Release pinned key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_idx),
 	    "Release pinned index buffer");
-	HANDLE_CLERROR(clReleaseMemObject(pinned_real_salt),
-	    "Release pinned index buffer");
-	HANDLE_CLERROR(clReleaseMemObject(pinned_rest_salt),
+	HANDLE_CLERROR(clReleaseMemObject(pinned_salt),
 	    "Release pinned index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_result), "Release result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_key), "Release key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_idx),
 	    "Release index buffer");
-	HANDLE_CLERROR(clReleaseMemObject(cl_saved_real_salt),
+	HANDLE_CLERROR(clReleaseMemObject(cl_saved_salt),
 	    "Release real salt");
-	HANDLE_CLERROR(clReleaseMemObject(cl_saved_rest_salt),
-	    "Release rest salt");
 	HANDLE_CLERROR(clReleaseMemObject(cl_memory), "Release memory");
 }
 
@@ -327,6 +254,67 @@ static void done(void)
 
 	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
 	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+}
+
+
+static unsigned short max_test_cost()
+{
+	int i;
+	unsigned short M_COST = 0;
+	for (i = 0; tests[i].ciphertext; i++) {
+		get_salt(tests[i].ciphertext);
+		M_COST = MAX(M_COST, cm_cost);
+	}
+	return M_COST;
+}
+
+static void reset_(unsigned short M_COST)
+{
+	char build_opts[128];
+	MEM_SIZE = 1ULL << (10 + M_COST);	//13 for char, 10 for long
+
+	sprintf(build_opts,
+	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d", BINARY_SIZE, SALT_SIZE);
+
+	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
+
+
+	// create kernel to execute
+	crypt_kernel =
+	    clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
+
+	release_clobj();
+	//Initialize openCL tuning (library) for this format.
+	opencl_init_auto_setup(SEED, 0, NULL,
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
+
+	//Auto tune execution from shared/included code.
+	autotune_run(self, 1, 1000, 10000);
+}
+
+static void reset(struct db_main *db)
+{
+	unsigned short M_COST;
+	if (!db) {
+		M_COST = max_test_cost();
+		reset_(M_COST);
+	} else {
+		struct db_salt *salt = db->salts;
+		M_COST = 0;
+		while (salt != NULL) {
+			M_COST = MAX(M_COST, salt->cost[1]);
+			salt = salt->next;
+		}
+		reset_(M_COST);
+	}
+}
+
+static void init(struct fmt_main *_self)
+{
+	clobj_allocated = 0;
+	self = _self;
 }
 
 static int valid(char *ciphertext, struct fmt_main *self)
@@ -363,80 +351,6 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	return 1;
 }
 
-/*
-struct fmt_tests {
-	char *ciphertext, *plaintext;
-	char *fields[10];
-};
-*/
-
-static unsigned short max_test_cost()
-{
-	int i;
-	unsigned short M_COST = 0;
-	for (i = 0; tests[i].ciphertext; i++) {
-		get_salt(tests[i].ciphertext);
-		M_COST = MAX(M_COST, cm_cost);
-	}
-	return M_COST;
-}
-
-static void reset_(unsigned short M_COST)
-{
-	char build_opts[128];
-	MEM_SIZE = 1ULL << (10 + M_COST);	//13 for char, 10 for long
-
-	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d", BINARY_SIZE, SALT_SIZE);
-
-	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
-
-
-	// create kernel to execute
-	crypt_kernel =
-	    clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel. Double-check kernel name?");
-
-	release_clobj();
-	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
-
-	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 100, 1000);
-}
-
-static void reset(struct db_main *db)
-{
-	unsigned short M_COST;
-	if (!db) {
-		M_COST = max_test_cost();
-		reset_(M_COST);
-	} else {
-		struct db_salt *salt = db->salts;
-		M_COST = 0;
-		while (salt != NULL) {
-			M_COST = MAX(M_COST, salt->cost[1]);
-			salt = salt->next;
-		}
-		reset_(M_COST);
-	}
-}
-
-static void init(struct fmt_main *_self)
-{
-	clobj_allocated = 0;
-	self = _self;
-}
-
-static void clear_keys(void)
-{
-	key_idx = 0;
-	saved_idx[0] = 0;
-	key_offset = 0;
-	idx_offset = 0;
-}
 
 static void set_key(char *key, int index)
 {
@@ -476,17 +390,26 @@ static char *get_key(int index)
 	return out;
 }
 
+static void clear_keys(void)
+{
+	key_idx = 0;
+	saved_idx[0] = 0;
+	key_offset = 0;
+	idx_offset = 0;
+}
+
+
 static void char_to_bin(char *in, int char_length, char *bin)
 {
 	int i;
 	for (i = 0; i < char_length; i += 2) {
 		char a = in[i];
 		char b = in[i + 1];
-		if (a >= 60)
+		if (a >= 65)
 			a -= 55;
 		else
 			a -= 48;
-		if (b >= 60)
+		if (b >= 65)
 			b -= 55;
 		else
 			b -= 48;
@@ -497,83 +420,51 @@ static void char_to_bin(char *in, int char_length, char *bin)
 
 static void *get_binary(char *ciphertext)
 {
-	static char realcipher[BINARY_SIZE];
 	char *ii;
-
-	ciphertext += 1;
-
-	memset(realcipher, 0, BINARY_SIZE);
-
+	static char out[BINARY_SIZE];
+	memset(out, 0, BINARY_SIZE);
 
 	ii = strrchr(ciphertext, '$');
 	ii = ii + 1;
-	realcipher[0] = strlen(ii) / 2;
-	char_to_bin(ii, strlen(ii), realcipher + 1);
-
-	return (void *)realcipher;
+	char_to_bin(ii, strlen(ii), out);
+	return out;
 }
 
 static void *get_salt(char *ciphertext)
 {
-	static char salt[SALT_SIZE + 5];
+	static struct pomelo_salt salt;
 	char *i = ciphertext + 8;
-	char *first_dollar, *second_dollar;
+	char *first_dollar,*second_dollar;
 	char *last_dollar = strrchr(ciphertext, '$');
 
-	memset(salt, 0, sizeof(salt));
+	memset(salt.salt, 0, sizeof(salt.salt));
 
-	salt[0] = (char)(strlen(last_dollar + 1) / 2);
+	salt.hash_size = strlen(last_dollar + 1) / 2;
 
-	salt[last_dollar - i + 4] = 0;
-	salt[SALT_SIZE + 4] = 0;
 	first_dollar = strchr(i, '$');
 	second_dollar = strchr(first_dollar + 1, '$');
 
-	ct_cost = atoi(i);
+	salt.salt_length = last_dollar - second_dollar - 1;
+	salt.t_cost = atoi(i);
+	cm_cost=salt.m_cost = atoi(first_dollar+1);
 
-	cm_cost = atoi(first_dollar + 1);
+	memcpy(salt.salt, second_dollar + 1, salt.salt_length);
 
-	salt[1] = (char)(last_dollar - second_dollar - 1);
-	salt[2] = (char)ct_cost;
-	salt[3] = (char)cm_cost;
-	memcpy(salt + 4, second_dollar + 1, salt[1]);
-
-	return salt;
+	return (void *)&salt;
 }
+
 
 static void set_salt(void *salt)
 {
-	char *i = salt;
-	unsigned char *o = salt;
-	length_cipher = (int)o[0];
-	if (length_cipher == 0)
-		length_cipher = 256;
-	i = i + 4;
-
-	length_salt = o[1];
-	memset(saved_real_salt, 0, SALT_SIZE);
-	memcpy(saved_real_salt, i, length_salt);
-
-	saved_rest_salt[0] = length_cipher;
-	saved_rest_salt[1] = o[1];	//length salt
-	saved_rest_salt[2] = o[2];	//t_cost
-	saved_rest_salt[3] = o[3];	//m_cost
+	memcpy(saved_salt,salt,sizeof(struct pomelo_salt));
 }
 
 static int cmp_all(void *binary, int count)
 {
 	int i;
-	int length;
-	unsigned char *str_binary;
-
-	str_binary = binary;
-	length = str_binary[0];
-	if (length == 0)
-		length = 256;
-
 
 	for (i = 0; i < count; i++) {
-		if (!memcmp(binary, output + i * BINARY_SIZE, length))
+		if (!memcmp(binary,output + i * BINARY_SIZE, saved_salt->hash_size))
 			return 1;
 	}
 	return 0;
@@ -582,11 +473,7 @@ static int cmp_all(void *binary, int count)
 
 static int cmp_one(void *binary, int index)
 {
-	unsigned char *str_binary = binary;
-	int len = str_binary[0];
-	if (len == 0)
-		len = 256;
-	return !memcmp(binary, output + index * BINARY_SIZE, len);
+	return !memcmp(binary, output + index * BINARY_SIZE,  saved_salt->hash_size);
 }
 
 static int cmp_exact(char *source, int index)
@@ -607,37 +494,33 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	if (idx_offset > 4 * (global_work_size + 1))
 		idx_offset = 0;
 
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_rest_salt,
-		CL_FALSE, 0, 4 * sizeof(unsigned short int), saved_rest_salt,
-		0, NULL, multi_profilingEvent[0]),
-	    "Failed transferring rest salt");
 
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_real_salt,
-		CL_FALSE, 0, SALT_SIZE, saved_real_salt, 0, NULL,
-		multi_profilingEvent[1]), "Failed transferring real salt");
+	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
+		CL_FALSE, 0, sizeof(struct pomelo_salt), saved_salt, 0, NULL,
+		multi_profilingEvent[0]), "Failed transferring salt");
 
 	if (key_idx > key_offset)
 		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
 			cl_saved_key, CL_FALSE, key_offset,
 			key_idx - key_offset, saved_key + key_offset, 0, NULL,
-			multi_profilingEvent[2]), "Failed transferring keys");
+			multi_profilingEvent[1]), "Failed transferring keys");
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_idx,
 		CL_FALSE, idx_offset,
 		sizeof(cl_uint) * (global_work_size + 1) - idx_offset,
 		saved_idx + (idx_offset / sizeof(cl_uint)), 0, NULL,
-		multi_profilingEvent[3]), "Failed transferring index");
+		multi_profilingEvent[2]), "Failed transferring index");
 
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
 		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
 
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[5]), "failed in reading data back");
+		multi_profilingEvent[4]), "failed in reading data back");
 	partial_output = 1;
 
 
@@ -686,21 +569,43 @@ static int get_hash_6(int index)
 	return crypt[0] & 0x7FFFFFF;
 }
 
-#if FMT_MAIN_VERSION > 11
-static unsigned int tunable_cost_N(void *salt)
+static int salt_hash(void *_salt)
 {
-	char *str = salt;
-	return str[2];
+	int i;
+	struct pomelo_salt *salt = (struct pomelo_salt*)_salt;
+	unsigned int hash = 0;
+	char *p = salt->salt;
+
+	for(i=0;i<salt->salt_length;i++) {
+		hash <<= 1;
+		hash += (unsigned char)*p++;
+		if (hash >> SALT_HASH_LOG) {
+			hash ^= hash >> SALT_HASH_LOG;
+			hash &= (SALT_HASH_SIZE - 1);
+		}
+	}
+
+	hash ^= hash >> SALT_HASH_LOG;
+	hash &= (SALT_HASH_SIZE - 1);
+
+	return hash;
 }
 
-static unsigned int tunable_cost_r(void *salt)
+#if FMT_MAIN_VERSION > 11
+static unsigned int tunable_cost_N(void *_salt)
 {
-	char *str = salt;
-	return str[3];
+	struct pomelo_salt *salt=(struct pomelo_salt *)_salt;
+	return salt->t_cost;
+}
+
+static unsigned int tunable_cost_r(void *_salt)
+{
+	struct pomelo_salt *salt=(struct pomelo_salt *)_salt;
+	return salt->m_cost;
 }
 
 #endif
-
+/*
 struct fmt_main fmt_opencl_pomelo = {
 	{
 		    FORMAT_LABEL,
@@ -712,7 +617,7 @@ struct fmt_main fmt_opencl_pomelo = {
 		    PLAINTEXT_LENGTH,
 		    BINARY_SIZE,
 		    BINARY_ALIGN,
-		    SALT_SIZE,
+		    sizeof(struct pomelo_salt),
 		    SALT_ALIGN,
 		    MIN_KEYS_PER_CRYPT,
 		    MAX_KEYS_PER_CRYPT,
@@ -745,7 +650,7 @@ struct fmt_main fmt_opencl_pomelo = {
 				fmt_default_binary_hash_4,
 				fmt_default_binary_hash_5,
 			fmt_default_binary_hash_6},
-		    fmt_default_salt_hash,
+		    salt_hash,
 		    NULL,
 		    set_salt,
 		    set_key,
@@ -764,6 +669,76 @@ struct fmt_main fmt_opencl_pomelo = {
 		    cmp_one,
 	    cmp_exact}
 
+};*/
+
+struct fmt_main fmt_opencl_pomelo = {
+	{
+		FORMAT_LABEL,
+		FORMAT_NAME,
+		ALGORITHM_NAME,
+		BENCHMARK_COMMENT,
+		BENCHMARK_LENGTH,
+		0,
+		PLAINTEXT_LENGTH,
+		BINARY_SIZE,
+		BINARY_ALIGN,
+		sizeof(struct pomelo_salt),
+		SALT_ALIGN,
+		MIN_KEYS_PER_CRYPT,
+		MAX_KEYS_PER_CRYPT,
+		FMT_CASE | FMT_8_BIT,
+#if FMT_MAIN_VERSION > 11
+		{
+			"N",
+			"r"
+		},
+#endif
+		tests
+	}, {
+		init,
+		done,
+		reset,
+		fmt_default_prepare,
+		valid,
+		fmt_default_split,
+		get_binary,
+		get_salt,
+#if FMT_MAIN_VERSION > 11
+		{
+			tunable_cost_N,
+			tunable_cost_r
+		},
+#endif
+		fmt_default_source,
+		{
+			fmt_default_binary_hash_0,
+			fmt_default_binary_hash_1,
+			fmt_default_binary_hash_2,
+			fmt_default_binary_hash_3,
+			fmt_default_binary_hash_4,
+			fmt_default_binary_hash_5,
+			fmt_default_binary_hash_6
+		},
+		salt_hash,
+		NULL,
+		set_salt,
+		set_key,
+		get_key,
+		clear_keys,
+		crypt_all,
+		{
+			get_hash_0,
+			get_hash_1,
+			get_hash_2,
+			get_hash_3,
+			get_hash_4,
+			get_hash_5,
+			get_hash_6
+		},
+		cmp_all,
+		cmp_one,
+		cmp_exact
+	}
 };
 
 #endif				/* plugin stanza */

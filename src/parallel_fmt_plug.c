@@ -48,12 +48,6 @@ john_register_one(&fmt_parallel);
 
 #define OMP_SCALE 			1
 
-struct parallel_salt {
-	size_t cost;
-	size_t hash_size;
-	size_t salt_length;
-	char salt[SALT_SIZE];
-};
 
 static struct fmt_tests tests[] = {
 	{"$parallel$0$salt$6ee2fc021128a12b421606081687c7a5f17079400895a810ba4dffce1c5e4952a2c6ee370d7955bf9e479087405525dbdc62901e2851fd78ef4c42a8e2b8842d","password"},
@@ -62,16 +56,16 @@ static struct fmt_tests tests[] = {
 	{"$parallel$1$salt$13528220310eb5bd3f91abf322a50b7846a90a67c83d2515a2d19fdf7c1dc227a8fadab0b81960357556255ccfc8306265b0d0b94bfe1b9530844effafdc86a2","password"},
 	{"$parallel$2$salt$e1085b1a23f7f8d174ebd3d650e783d6a2b5880890cef82817b69ee5e82dbe3a9aec46925d26b4eab45fa3a3b6034e9c7a6669772d71259737d5f0bad5060113","password"},
 	{"$parallel$3$salt$e210bcdc45b17f4a3751358f5f7b23fe0e70124e49b3a6be7204a047c7afba45febd59848e16dd4899043b9d40fe387865412c167dfb955d0a08c026ba424416","password"},
-	{"$parallel$4$salt$7af24e632c782720c403b69b26b21ac81637c8184b03d9bb6c40429d0dfcc264a4107e0b78c0e49d949c1bb59b5185bf52cb57dd75b52b11d8bba75f7c0857e5","password"},
-	{"$parallel$5$salt$f646ab7046d70581d4bbe95db0e93f82dcf6b322cad094e93eddf4969743af57cdcdcd45bcd8f0557924a86299040cd5f5ede5b8891ba62f33b08879fecb9cfc","password"},
-	{"$parallel$6$salt$c9483307fe0c5f50c973a9cc2cfe2ea5e2786329ebad9a6aec2417caef16f559112788775479bf2e35d5f79ae8f3f66cbe5a7f9ddea9dd3aa5ddc70dbb162041","password"},
-	{"$parallel$7$salt$2d6b048bcdf8155141d7f1cdacbe5bb9c9357f6396252c57c9bc705ca33b642b2ed6c21bfd81a43a7e929ae2610a69ec3db981db212480c81ed2ddc09846939a","password"},
-	{"$parallel$8$salt$e7cf3fb36940b14a769271363195a4b9225e6fe133b053aad1240dd2ae18b6b39545b3ac13dd9e7ca96cf9b7b549007e4ff18c06cbfd9371660d5cf07433cd2b","password"},
-	{"$parallel$9$salt$d7e332b70ae4411093a5470bfd3549b4fb3555990257363eca4e08e025fc47bd814bdace11056474ed8f23ea1ad7b48cac89aa0d7320fe8adca7e891629025ae","password"},
-	{"$parallel$10$salt$cf5a271fee639cd226af08048c0762be506758ced831ef3238519bb3ea22f24c47c7e125542f7a1f7c9f8c0aa392a4b043051de5d1ed0467c7b144e05a356d3c","password"},
 	{"$parallel$65536$salt$af6cf841f2650c8ee1fe25bbc9308956bd43cb728eb290c031d8eb6edf22e055a02afcd4e54a1cab29d6b2ff1e0ee786d7ff1eaa52fb56cef57c0d0e993c9856","password"},
 	{"$parallel$131073$salt$7ef6f47049e949e5fbdcd323c72b787dc33f3467d7c545b207434862d4df1d7f4a3864fcbc724d417c9b3144aa2ea1326f81f4c639b75509277df4237f0fc7","password"},
 	{NULL}
+};
+
+struct parallel_salt {
+	size_t cost;
+	size_t hash_size;
+	size_t salt_length;
+	char salt[SALT_SIZE];
 };
 
 static struct parallel_salt saved_salt;
@@ -80,25 +74,6 @@ static char *saved_key;
 
 static unsigned char *crypted;
 
-
-static void char_to_bin(char *in, int char_length, char *bin)
-{
-	int i;
-	for (i = 0; i < char_length; i += 2) {
-		char a = in[i];
-		char b = in[i + 1];
-		if (a >= 97)
-			a -= 87;
-		else
-			a -= 48;
-		if (b >= 97)
-			b -= 87;
-		else
-			b -= 48;
-		bin[i / 2] = a << 4;
-		bin[i / 2] += b;
-	}
-}
 
 static void init(struct fmt_main *self)
 {
@@ -128,8 +103,8 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	char *i;
 	size_t cost;
 
-	if (strncmp(ciphertext, "$parallel$", 8) &&
-	    strncmp(ciphertext, "$parallel$", 8))
+	if (strncmp(ciphertext, "$parallel$", 10) &&
+	    strncmp(ciphertext, "$parallel$", 10))
 		return 0;
 	i = ciphertext + 10;
 	//cost
@@ -154,6 +129,40 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	return 1;
 }
 
+static void set_key(char *key, int index)
+{
+	int len;
+	len = strlen(key);
+	if (len > PLAINTEXT_LENGTH)
+		len = PLAINTEXT_LENGTH;
+	memcpy(saved_key + index * (PLAINTEXT_LENGTH + 1), key, len);
+	saved_key[index * (PLAINTEXT_LENGTH + 1) + len] = 0;
+}
+
+static char *get_key(int index)
+{
+	return saved_key + index * (PLAINTEXT_LENGTH + 1);
+}
+
+static void char_to_bin(char *in, int char_length, char *bin)
+{
+	int i;
+	for (i = 0; i < char_length; i += 2) {
+		char a = in[i];
+		char b = in[i + 1];
+		if (a >= 97)
+			a -= 87;
+		else
+			a -= 48;
+		if (b >= 97)
+			b -= 87;
+		else
+			b -= 48;
+		bin[i / 2] = a << 4;
+		bin[i / 2] += b;
+	}
+}
+
 static void *get_binary(char *ciphertext)
 {
 	char *ii;
@@ -164,6 +173,72 @@ static void *get_binary(char *ciphertext)
 	ii = ii + 1;
 	char_to_bin(ii, strlen(ii), out);
 	return out;
+}
+
+static void *get_salt(char *ciphertext)
+{
+	static struct parallel_salt salt;
+	char *i = ciphertext + 10;
+	char *first_dollar;
+	char *last_dollar = strrchr(ciphertext, '$');
+
+	memset(salt.salt, 0, sizeof(salt.salt));
+
+	salt.hash_size = strlen(last_dollar + 1) / 2;
+
+	first_dollar = strchr(i, '$');
+
+	salt.salt_length = last_dollar - first_dollar - 1;
+	salt.cost = atoi(i);
+
+	memcpy(salt.salt, first_dollar + 1, salt.salt_length);
+
+	return (void *)&salt;
+}
+
+static void set_salt(void *salt)
+{
+	memcpy(&saved_salt,salt,sizeof(struct parallel_salt));
+}
+
+static int cmp_all(void *binary, int count)
+{
+	int i;
+
+	for (i = 0; i < count; i++) {
+		if (!memcmp(binary, crypted + i * BINARY_SIZE, saved_salt.hash_size))
+			return 1;
+	}
+	return 0;
+
+}
+
+static int cmp_one(void *binary, int index)
+{
+	return !memcmp(binary, crypted + index * BINARY_SIZE,  saved_salt.hash_size);
+}
+
+static int cmp_exact(char *source, int index)
+{
+	return 1;
+}
+
+static int crypt_all(int *pcount, struct db_salt *salt)
+{
+	int i;
+	const int count = *pcount;
+
+#ifdef _OPENMP
+#pragma omp parallel for
+#endif
+	for (i = 0; i < count; i++) {
+		PARALLEL
+		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
+		    saved_key + i * (PLAINTEXT_LENGTH + 1),
+		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
+		    saved_salt.salt_length, saved_salt.cost);
+	}
+	return count;
 }
 
 
@@ -232,86 +307,6 @@ static int salt_hash(void *_salt)
 	return hash;
 }
 
-static void *get_salt(char *ciphertext)
-{
-	static struct parallel_salt salt;
-	char *i = ciphertext + 10;
-	char *first_dollar;
-	char *last_dollar = strrchr(ciphertext, '$');
-
-	memset(salt.salt, 0, sizeof(salt.salt));
-
-	salt.hash_size = strlen(last_dollar + 1) / 2;
-
-	first_dollar = strchr(i, '$');
-
-	salt.salt_length = last_dollar - first_dollar - 1;
-	salt.cost = atoi(i);
-
-	memcpy(salt.salt, first_dollar + 1, salt.salt_length);
-
-	return (void *)&salt;
-}
-
-static void set_salt(void *salt)
-{
-	memcpy(&saved_salt,salt,sizeof(struct parallel_salt));
-}
-
-static void set_key(char *key, int index)
-{
-	int len;
-	len = strlen(key);
-	if (len > PLAINTEXT_LENGTH)
-		len = PLAINTEXT_LENGTH;
-	memcpy(saved_key + index * (PLAINTEXT_LENGTH + 1), key, len);
-	saved_key[index * (PLAINTEXT_LENGTH + 1) + len] = 0;
-}
-
-static char *get_key(int index)
-{
-	return saved_key + index * (PLAINTEXT_LENGTH + 1);
-}
-
-static int crypt_all(int *pcount, struct db_salt *salt)
-{
-	int i;
-	const int count = *pcount;
-
-#ifdef _OPENMP
-#pragma omp parallel for
-#endif
-	for (i = 0; i < count; i++) {
-		PARALLEL
-		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
-		    saved_key + i * (PLAINTEXT_LENGTH + 1),
-		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
-		    saved_salt.salt_length, saved_salt.cost);
-	}
-	return count;
-}
-
-static int cmp_all(void *binary, int count)
-{
-	int i;
-
-	for (i = 0; i < count; i++) {
-		if (!memcmp(binary, crypted + i * BINARY_SIZE, saved_salt.hash_size))
-			return 1;
-	}
-	return 0;
-
-}
-
-static int cmp_exact(char *source, int index)
-{
-	return 1;
-}
-
-static int cmp_one(void *binary, int index)
-{
-	return !memcmp(binary, crypted + index * BINARY_SIZE,  saved_salt.hash_size);
-}
 
 #if FMT_MAIN_VERSION > 11
 static unsigned int tunable_cost_N(void *_salt)

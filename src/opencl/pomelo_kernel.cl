@@ -140,11 +140,18 @@
 
 // BINARY_SIZE, SALT_SIZE, MEM_SIZE, T_COST and M_COST is passed with -D during build
 
+struct pomelo_salt {
+	unsigned int t_cost,m_cost;
+	unsigned int hash_size;
+	unsigned int salt_length;
+	char salt[SALT_SIZE];
+};
+
 __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
-    __global const char *salt,
-    __global unsigned short int *rest_salt, __global unsigned long *S)
+    __global struct pomelo_salt *salt,
+    __global unsigned long *S)
 {
 	unsigned long gid4;
 
@@ -173,18 +180,17 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	base = index[gid];
 	inlen = index[gid + 1] - base;
 
-	outlen = rest_salt[0];
-	saltlen = rest_salt[1];
+	outlen = salt->hash_size;
+	saltlen = salt->salt_length;
 
-	T_COST = rest_salt[2];
-	M_COST = rest_salt[3];
+	T_COST = salt->t_cost;
+	M_COST = salt->m_cost;
 
 
 	in += base;
 
 	if (inlen > 256 || saltlen > 64 || outlen > 256)
 		return;
-
 
 	state_size = 1UL << (13 + M_COST);
 
@@ -197,7 +203,7 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	for (i = 0; i < inlen; i++)
 		((__global unsigned char *)S)[MAPCH(i)] = in[i];	// load password into S
 	for (i = 0; i < saltlen; i++)
-		((__global unsigned char *)S)[MAPCH(inlen + i)] = salt[i];	// load salt into S
+		((__global unsigned char *)S)[MAPCH(inlen + i)] = salt->salt[i];	// load salt into S
 	for (i = inlen + saltlen; i < 384; i++)
 		((__global unsigned char *)S)[MAPCH(i)] = 0;
 	((__global unsigned char *)S)[MAPCH(384)] = inlen & 0xff;	// load password length (in bytes) into S;
@@ -242,9 +248,8 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 	//Step 7: Generate the output   
 	//memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
 	for (i = 0; i < outlen; i++) {
-		out[i + 1] =
+		out[i] =
 		    ((__global unsigned char *)S)[MAPCH(state_size - outlen +
 			i)];
 	}
-	out[0] = (char)outlen;
 }
