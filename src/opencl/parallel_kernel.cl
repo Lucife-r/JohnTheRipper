@@ -62,6 +62,18 @@
 	m_state[7] = 0x5be0cd19137e2179;	\
 }	\
 
+#define STEP {	\
+	h = g;	\
+	g = f;	\
+	f = e;	\
+	e = d + t;	\
+	t = t + Maj(a, b, c) + Sigma0(a);	\
+	d = c;	\
+	c = b;	\
+	b = a;	\
+	a = t;	\
+}
+
 #if AMD_GCN==1
 inline void sha512Block(__private unsigned long block[16], unsigned long state[8])
 {
@@ -156,16 +168,7 @@ inline void sha512Block(__private unsigned long block[16], unsigned long state[8
 	for (int i = 0; i < 16; i++) 
 	{
 		t = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
-
-		h = g;
-		g = f;
-		f = e;
-		e = d + t;
-		t = t + Maj(a, b, c) + Sigma0(a);
-		d = c;
-		c = b;
-		b = a;
-		a = t;
+		STEP;
 	}
 
 #ifdef AMD_STUPID_BUG_1
@@ -175,16 +178,183 @@ inline void sha512Block(__private unsigned long block[16], unsigned long state[8
 	{
 		w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
 		t = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
+		STEP;
+    	}
+
+	state[0] += a;
+	state[1] += b;
+	state[2] += c;
+	state[3] += d;
+	state[4] += e;
+	state[5] += f;
+	state[6] += g;
+	state[7] += h;
+}
+#endif
+
+#if AMD_GCN==1
+inline void sha512Block_Z(__private unsigned long block[16], unsigned long state[8])
+{
+	unsigned long w[16];
+	unsigned long a = state[0];
+	unsigned long b = state[1];
+	unsigned long c = state[2];
+	unsigned long d = state[3];
+	unsigned long e = state[4];
+	unsigned long f = state[5];
+	unsigned long g = state[6];
+	unsigned long h = state[7];
+	unsigned long t1,t2;
+	
+
+#ifdef VECTOR_USAGE
+	ulong16  w_vector;
+	w_vector = vload16(0, block);
+	w_vector = SWAP64_V(w_vector);
+	vstore16(w_vector, 0, w);
+#else
+	#pragma unroll
+	for (int i = 0; i < 16; i++)
+		w[i] = SWAP_ENDIAN_64(block[i]);
+#endif
+
+	for (int i = 0; i < 16; i++) {
+		t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
+		t2 = Maj(a, b, c) + Sigma0(a);
 
 		h = g;
 		g = f;
 		f = e;
-		e = d + t;
-		t = t + Maj(a, b, c) + Sigma0(a);
+		e = d + t1;
 		d = c;
 		c = b;
 		b = a;
-		a = t;
+		a = t1 + t2;
+	}
+
+	#pragma unroll 8
+	for (int i = 16; i < 80; i++) {
+		w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
+		t1 = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
+		t2 = Maj(a, b, c) + Sigma0(a);
+
+		h = g;
+		g = f;
+		f = e;
+		e = d + t1;
+		d = c;
+		c = b;
+		b = a;
+		a = t1 + t2;
+	}
+ 
+	state[0] += a;
+	state[1] += b;
+	state[2] += c;
+	state[3] += d;
+	state[4] += e;
+	state[5] += f;
+	state[6] += g;
+	state[7] += h;
+}
+
+#else
+inline void sha512Block_Z(__private unsigned long block[16], unsigned long state[8])
+{
+	unsigned long w[16];
+	unsigned long a = state[0];
+	unsigned long b = state[1];
+	unsigned long c = state[2];
+	unsigned long d = state[3];
+	unsigned long e = state[4];
+	unsigned long f = state[5];
+	unsigned long g = state[6];
+	unsigned long h = state[7];
+	unsigned long t;
+
+	#pragma unroll
+	for (int i = 0; i < 10; i++)
+		w[i] = SWAP_ENDIAN_64(block[i]);
+
+	w[10] = 0;
+	w[11] = 0;
+	w[12] = 0;
+	w[13] = 0;
+	w[14] = 0;
+	w[15] = block[15];
+
+	for (int i = 0; i < 10; i++) 
+	{
+		t = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
+		STEP;
+	}
+
+	for (int i = 10; i < 15; i++) 
+	{
+		t = k[i] + h + Sigma1(e) + Ch(e, f, g);
+		STEP;
+	}
+
+	t = k[15] + w[15] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	
+	w[0] = sigma0(w[1]) + w[0] + w[9];
+	t = k[16] + w[0] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[1] = sigma1(w[15]) + sigma0(w[2]) + w[1];
+	t = k[17] + w[1] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[2] = sigma1(w[0]) + sigma0(w[3]) + w[2];
+	t = k[18] + w[2] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[3] = sigma1(w[1]) + sigma0(w[4]) + w[3];
+	t = k[19] + w[3] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[4] = sigma1(w[2]) + sigma0(w[5]) + w[4];
+	t = k[20] + w[4] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[5] = sigma1(w[3]) + sigma0(w[6]) + w[5];
+	t = k[21] + w[5] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[6] = sigma1(w[4]) + sigma0(w[7]) + w[6] + w[15];
+	t = k[22] + w[6] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[7] = sigma1(w[5]) + sigma0(w[8]) + w[7] + w[0];
+	t = k[23] + w[7] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[8] = sigma1(w[6]) + sigma0(w[9]) + w[8] + w[1];
+	t = k[24] + w[8] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[9] = sigma1(w[7])  + w[9] + w[2];
+	t = k[25] + w[9] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[10] = sigma1(w[8]) + w[3];
+	t = k[26] + w[10] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[11] = sigma1(w[9])  + w[4];
+	t = k[27] + w[11] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[12] = sigma1(w[10])  + w[5];
+	t = k[28] + w[12] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[13] = sigma1(w[11]) + w[6];
+	t = k[29] + w[13] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[14] = sigma1(w[12]) + sigma0(w[15]) + w[7];
+	t = k[30] + w[14] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+	w[15] = sigma1(w[13]) + sigma0(w[0]) + w[15] + w[8];
+	t = k[31] + w[15] + h + Sigma1(e) + Ch(e, f, g);
+	STEP;
+
+#ifdef AMD_STUPID_BUG_1
+    #pragma unroll 4
+#endif
+    	for (int i = 32; i < 80; i++) 
+	{
+		w[i & 15] = sigma1(w[(i - 2) & 15]) + sigma0(w[(i - 15) & 15]) + w[(i - 16) & 15] + w[(i - 7) & 15];
+		t = k[i] + w[i & 15] + h + Sigma1(e) + Ch(e, f, g);
+		STEP;
     	}
 
 	state[0] += a;
@@ -206,13 +376,6 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 		0x6a09e667f3bcc908, 0xbb67ae8584caa73b, 0x3c6ef372fe94f82b, 0xa54ff53a5f1d36f1,
 		0x510e527fade682d1, 0x9b05688c2b3e6c1f, 0x1f83d9abfb41bd6b, 0x5be0cd19137e2179};
 	unsigned int left = length;
-
-	while (left >= 128)
-	{
-		sha512Block((unsigned long*) message, state);
-		message = ((unsigned long*) message) + 16;
-		left -= 128;
-	}
 	
 	for(i=0;i<left;i++)
 		((unsigned char*)block)[i]=((unsigned char*)message)[i];
@@ -220,14 +383,6 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 	for(i=0;i<128 - (left + 1);i++)
 		((unsigned char*) block)[left + 1+i]=0;
 
-	if (left >= 128 - 16)
-	{
-		sha512Block(block, state);
-		for (unsigned int i = 0; i < 14; i++)
-		{
-			block[i] = 0;
-		}
-	}
 	unsigned long tmp;
 	tmp = ((unsigned long) length) >> (64 - 3);
 	block[14] = SWAP_ENDIAN_64(tmp);
@@ -235,10 +390,6 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 	block[15] = SWAP_ENDIAN_64(tmp);
 	
 	sha512Block(block, state);
-	if (outLength > 64)
-	{
-		outLength = 64;
-	}
 	for (i = 0, end = outLength / 8; i < end; i++)
 	{
 		((unsigned long*) out)[i] = SWAP_ENDIAN_64(state[i]);
@@ -250,7 +401,6 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 }
 
 #define FINAL(OUT, OUTLENGTH) { \
-	lengthHi = 0; \
 	lengthLo = (unsigned long) m_messageLengthLo; \
 \
 	((unsigned char*) m_block)[lengthLo % 128] = 0x80; \
@@ -265,9 +415,8 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 			m_block[i] = 0; \
 		} \
 	} \
-	lengthHi  = (lengthHi << 3) + (lengthLo >> (64 - 3)); \
 	lengthLo *= 8; \
-	m_block[14] = SWAP_ENDIAN_64(lengthHi); \
+	m_block[14]=0; \
 	m_block[15] = SWAP_ENDIAN_64(lengthLo); \
 	sha512Block(m_block, m_state);    \
 	for (i = 0, end = (OUTLENGTH) / 8; i < end; i++) \
@@ -281,8 +430,29 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 } 
 
 
+#define FINAL_Z(OUT, OUTLENGTH) { \
+	lengthLo = (unsigned long) m_messageLengthLo; \
+\
+	((unsigned char*) m_block)[lengthLo % 128] = 0x80; \
+	for(i=0;i<128 - (lengthLo % 128 + 1);i++) \
+		((unsigned char*) m_block)[lengthLo % 128 + 1+i]=0; \
+\
+	lengthLo *= 8; \
+	m_block[15] = lengthLo; \
+	sha512Block_Z(m_block, m_state);    \
+	for (i = 0, end = (OUTLENGTH) / 8; i < end; i++) \
+	{ \
+		((unsigned long*) (OUT))[i] = SWAP_ENDIAN_64(m_state[i]); \
+	} \
+	for (i = (OUTLENGTH) & ~7, shift = 56; i < (OUTLENGTH); i++, shift -= 8) \
+	{ \
+		((unsigned char*) (OUT))[i] = (char) (m_state[i / 8] >> shift); \
+	} \
+} 
+
+
 #define UPDATE(MSG, LENGTH) { \
-	pos  = m_messageLengthLo & 127; \
+	pos  = m_messageLengthLo; \
 	left = (LENGTH); \
 	message=(unsigned char*) (MSG); \
 	if (pos + left >= 128) \
@@ -345,7 +515,6 @@ __kernel void parallel_crypt_kernel(__global const uchar * in,
 	unsigned int pos;
 	unsigned int left;
 	unsigned char* message;
-	unsigned long lengthHi;
 	unsigned long lengthLo;
 	unsigned int u;
 
@@ -402,7 +571,7 @@ __kernel void parallel_crypt_kernel(__global const uchar * in,
 			INIT
 			UPDATE(&tmpJ, sizeof(tmpJ));
 			UPDATE(key, HASH_LENGTH);
-			FINAL(tmp, HASH_LENGTH);
+			FINAL_Z(tmp, HASH_LENGTH);
 			for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
 			{
 				work[k] ^= tmp[k];
