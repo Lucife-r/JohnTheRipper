@@ -74,17 +74,6 @@
 	a = t;	\
 }
 
-#if gpu_nvidia(DEVICE_INFO)
-#define ror64(x, n)       ((x >> n) | (x << (64 - n)))
-#else
-#define ror64(x, n)       rotate(x, (ulong)(64 - n))
-#endif
-
-#define Sigma0_64(x) ((ror64(x,28))  ^ (ror64(x,34)) ^ (ror64(x,39)))
-#define Sigma1_64(x) ((ror64(x,14))  ^ (ror64(x,18)) ^ (ror64(x,41)))
-#define sigma0_64(x) ((ror64(x,1))  ^ (ror64(x,8)) ^ (x >> 7))
-#define sigma1_64(x) ((ror64(x,19)) ^ (ror64(x,61)) ^ (x >> 6))
-
 #define INIT_A	0x6a09e667f3bcc908UL
 #define INIT_B	0xbb67ae8584caa73bUL
 #define INIT_C	0x3c6ef372fe94f82bUL
@@ -93,19 +82,6 @@
 #define INIT_F	0x9b05688c2b3e6c1fUL
 #define INIT_G	0x1f83d9abfb41bd6bUL
 #define INIT_H	0x5be0cd19137e2179UL
-
-#define ROUND512_A(a, b, c, d, e, f, g, h, ki, wi)	\
-	t = (ki) + (wi) + (h) + Sigma1_64(e) + Ch((e), (f), (g)); \
-	d += (t); h = (t) + Sigma0_64(a) + Maj((a), (b), (c));
-
-#define ROUND512_Z(a, b, c, d, e, f, g, h, ki)	\
-	t = (ki) + (h) + Sigma1_64(e) + Ch((e), (f), (g)); \
-	d += (t); h = (t) + Sigma0_64(a) + Maj((a), (b), (c));
-
-#define ROUND512_B(a, b, c, d, e, f, g, h, ki, wi, wj, wk, wl, wm)	  \
-	wi = sigma1_64(wj) + sigma0_64(wk) + wl + wm; \
-	t = (ki) + (wi) + (h) + Sigma1_64(e) + Ch((e), (f), (g)); \
-	d += (t); h = (t) + Sigma0_64(a) + Maj((a), (b), (c));
 
 
 #if AMD_GCN==1
@@ -246,8 +222,7 @@ inline void sha512Block_Z(__private unsigned long block[16], unsigned long state
 	w[10]=w[11]=w[12]=w[13]=w[14]=0;
 	w[15] = block[15];
 
-	#pragma unroll 1
-	for (int i = 0; i < 16; i++) {
+	/*for (int i = 0; i < 16; i++) {
 		t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
 		t2 = Maj(a, b, c) + Sigma0(a);
 
@@ -259,9 +234,9 @@ inline void sha512Block_Z(__private unsigned long block[16], unsigned long state
 		c = b;
 		b = a;
 		a = t1 + t2;
-	}
+	}*/
 
-/*
+
 	for (int i = 0; i < 10; i++) {
 		t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
 		t2 = Maj(a, b, c) + Sigma0(a);
@@ -277,7 +252,7 @@ inline void sha512Block_Z(__private unsigned long block[16], unsigned long state
 	}
 
 	for (int i = 10; i < 15; i++) {
-		t1 = k[i] + w[i] + h + Sigma1(e) + Ch(e, f, g);
+		t1 = k[i] + h + Sigma1(e) + Ch(e, f, g);
 		t2 = Maj(a, b, c) + Sigma0(a);
 
 		h = g;
@@ -300,7 +275,7 @@ inline void sha512Block_Z(__private unsigned long block[16], unsigned long state
 	d = c;
 	c = b;
 	b = a;
-	a = t1 + t2;*/
+	a = t1 + t2;
 
 	#pragma unroll 8
 	for (int i = 16; i < 80; i++) {
@@ -638,13 +613,9 @@ __kernel void parallel_kernel_loop(__global const uchar * in,
     __global struct parallel_salt *salt,
     __global unsigned char *job)
 {
-	
-	unsigned int outlen;
-	unsigned int saltlen;	
 
 	unsigned long  key [HASH_LENGTH / sizeof(unsigned long)];
 	unsigned long work [HASH_LENGTH / sizeof(unsigned long)];
-	//unsigned long w[16];
 	unsigned long parallelLoops;
 	unsigned long i;
 	unsigned long j;
@@ -652,18 +623,13 @@ __kernel void parallel_kernel_loop(__global const uchar * in,
 	unsigned int k;
 	uint gid;
 
-	unsigned int m_messageLengthLo;
 	unsigned long m_state[8];
 	unsigned long m_block[16];
-
-	unsigned char* message;
 
 	gid = get_global_id(0);
 	out += gid * BINARY_SIZE;
 	job += gid * BINARY_SIZE;
 
-	outlen=salt->hash_size;
-	saltlen=salt->salt_length;
 
 	//copying saved previously work
 	for(i=0;i<HASH_LENGTH;i++)
@@ -707,11 +673,9 @@ __kernel void parallel_kernel_finish_loop(
 {
 	
 	unsigned int outlen;
-	unsigned int saltlen;	
 
 	unsigned long  key [HASH_LENGTH / sizeof(unsigned long)];
 	unsigned long work [HASH_LENGTH / sizeof(unsigned long)];
-	unsigned long parallelLoops;
 	unsigned long i;
 	unsigned int k;
 	uint gid;
@@ -732,7 +696,6 @@ __kernel void parallel_kernel_finish_loop(
 	job += gid * BINARY_SIZE;
 
 	outlen=salt->hash_size;
-	saltlen=salt->salt_length;
 
 	//copying saved previously work
 	for(i=0;i<HASH_LENGTH;i++)
@@ -764,7 +727,6 @@ __kernel void parallel_kernel_finish(__global const uchar * in,
 {
 	
 	unsigned int outlen;
-	unsigned int saltlen;	
 
 	unsigned long  key [HASH_LENGTH / sizeof(unsigned long)];
 	unsigned long work [HASH_LENGTH / sizeof(unsigned long)];
@@ -788,7 +750,6 @@ __kernel void parallel_kernel_finish(__global const uchar * in,
 	job += gid * BINARY_SIZE;
 
 	outlen=salt->hash_size;
-	saltlen=salt->salt_length;
 
 	//copying previously saved work
 	for(i=0;i<HASH_LENGTH;i++)
