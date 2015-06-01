@@ -24,11 +24,12 @@ john_register_one(&fmt_opencl_parallel);
 #include "formats.h"
 #include "common-opencl.h"
 #include "opencl_device_info.h"
+#include "parallel.h"
 
-#define FORMAT_LABEL			"parallel-opencl"
-#define FORMAT_NAME			"parallel SHA-512"
+#define FORMAT_LABEL			"Parallel-opencl"
+#define FORMAT_NAME			""
+#define ALGORITHM_NAME			"SHA-512 OpenCL"
 
-#define ALGORITHM_NAME			" "
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -59,23 +60,24 @@ static const char *warn[] = {
 	", crypt: ", ", xfer: "
 };
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
+#define MIN(a, b)		(((a) > (b)) ? (b) : (a))
 
 
 static struct fmt_tests tests[] = {
-	{"$parallel$0$salt$6ee2fc021128a12b421606081687c7a5f17079400895a810ba4dffce1c5e4952a2c6ee370d7955bf9e479087405525dbdc62901e2851fd78ef4c42a8e2b8842d","password"},
-	{"$parallel$0$salt$43dd067982f03038451443ee265ddee3b5c166d1c17bfa693c7ff90bbf3857fda16807e6f0f2a7d547b256846fa4708259c4520738bc107309af9dc6f9fb5f41","admin"},
-	{"$parallel$0$salt$6ee2fc021128a12b421606081687c7a5f17079400895a810ba4dffce1c5e4952","password"},
-	{"$parallel$1$salt$13528220310eb5bd3f91abf322a50b7846a90a67c83d2515a2d19fdf7c1dc227a8fadab0b81960357556255ccfc8306265b0d0b94bfe1b9530844effafdc86a2","password"},
-	{"$parallel$2$salt$e1085b1a23f7f8d174ebd3d650e783d6a2b5880890cef82817b69ee5e82dbe3a9aec46925d26b4eab45fa3a3b6034e9c7a6669772d71259737d5f0bad5060113","password"},
-	{"$parallel$3$salt$e210bcdc45b17f4a3751358f5f7b23fe0e70124e49b3a6be7204a047c7afba45febd59848e16dd4899043b9d40fe387865412c167dfb955d0a08c026ba424416","password"},
-	{"$parallel$65536$salt$af6cf841f2650c8ee1fe25bbc9308956bd43cb728eb290c031d8eb6edf22e055a02afcd4e54a1cab29d6b2ff1e0ee786d7ff1eaa52fb56cef57c0d0e993c9856","password"},
-	{"$parallel$131073$salt$7ef6f47049e949e5fbdcd323c72b787dc33f3467d7c545b207434862d4df1d7f4a3864fcbc724d417c9b3144aa2ea1326f81f4c639b75509277df4237f0fc7","password"},
+	{"$parallel$0$0$salt$6ee2fc021128a12b421606081687c7a5f17079400895a810ba4dffce1c5e4952a2c6ee370d7955bf9e479087405525dbdc62901e2851fd78ef4c42a8e2b8842d","password"},
+	{"$parallel$0$0$salt$43dd067982f03038451443ee265ddee3b5c166d1c17bfa693c7ff90bbf3857fda16807e6f0f2a7d547b256846fa4708259c4520738bc107309af9dc6f9fb5f41","admin"},
+	{"$parallel$0$0$salt$6ee2fc021128a12b421606081687c7a5f17079400895a810ba4dffce1c5e4952","password"},
+	{"$parallel$0$1$salt$13528220310eb5bd3f91abf322a50b7846a90a67c83d2515a2d19fdf7c1dc227a8fadab0b81960357556255ccfc8306265b0d0b94bfe1b9530844effafdc86a2","password"},
+	{"$parallel$0$2$salt$e1085b1a23f7f8d174ebd3d650e783d6a2b5880890cef82817b69ee5e82dbe3a9aec46925d26b4eab45fa3a3b6034e9c7a6669772d71259737d5f0bad5060113","password"},
+	{"$parallel$0$3$salt$e210bcdc45b17f4a3751358f5f7b23fe0e70124e49b3a6be7204a047c7afba45febd59848e16dd4899043b9d40fe387865412c167dfb955d0a08c026ba424416","password"},
+	{"$parallel$1$0$salt$af6cf841f2650c8ee1fe25bbc9308956bd43cb728eb290c031d8eb6edf22e055a02afcd4e54a1cab29d6b2ff1e0ee786d7ff1eaa52fb56cef57c0d0e993c9856","password"},
+	{"$parallel$2$1$salt$7ef6f47049e949e5fbdcd323c72b787dc33f3467d7c545b207434862d4df1d7f4a3864fcbc724d417c9b3144aa2ea1326f81f4c639b75509277df4237f0fc7","password"},
 	{NULL}
 };
 
 struct parallel_salt {
-	uint32_t cost;
+	uint32_t s_loops;
+	uint32_t p_loops;
 	uint32_t hash_size;
 	uint32_t salt_length;
 	char salt[SALT_SIZE];
@@ -84,21 +86,30 @@ struct parallel_salt {
 static char *saved_key;
 static unsigned int *saved_idx, key_idx;
 static size_t key_offset, idx_offset;
-static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt;
-static cl_mem pinned_key, pinned_idx, pinned_result, pinned_salt;
+static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt,cl_job;
+static cl_mem pinned_key, pinned_idx, pinned_result, pinned_salt,pinned_job;
 static int partial_output;
 static struct parallel_salt *saved_salt;
 static char *output;
+static char *job;
 static char *saved_key;
+cl_kernel crypt_kernel_init,crypt_kernel_loop,crypt_kernel_finish,crypt_kernel_finish_loop;
+uint64_t sequentialLoops;
 
 static int source_in_use;
+
+static int split_events[] = { 2, -1, -1 };
 
 static void *get_salt(char *ciphertext);
 
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
 {
-	return autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel);
+	size_t s;
+	s=autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_init);
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_loop));
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_finish));
+	return s;
 }
 
 static size_t get_task_max_size()
@@ -178,24 +189,78 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 	output =
 	    clEnqueueMapBuffer(queue[gpu_id], pinned_result, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, ((BINARY_SIZE * gws) + 4) / 4 * 4,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, ((BINARY_SIZE * gws) + 4) / 4 * 4,//to do
 	    0, NULL, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping output");
 
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 0, sizeof(cl_mem),
+	pinned_job =
+	    clCreateBuffer(context[gpu_id],
+	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+	    ((BINARY_SIZE * gws) + 4) / 4 * 4, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
+	cl_job =
+	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
+	    ((BINARY_SIZE * gws) + 4) / 4 * 4, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating device buffer");
+	job =
+	    clEnqueueMapBuffer(queue[gpu_id], pinned_job, CL_TRUE,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, ((BINARY_SIZE * gws) + 4) / 4 * 4,//to do
+	    0, NULL, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error mapping job");
+
+	//crypt_kernel_init
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_init, 0, sizeof(cl_mem),
 		(void *)&cl_saved_key), "Error setting argument 0");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 1, sizeof(cl_mem),
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_init, 1, sizeof(cl_mem),
 		(void *)&cl_saved_idx), "Error setting argument 1");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 2, sizeof(cl_mem),
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_init, 2, sizeof(cl_mem),
 		(void *)&cl_result), "Error setting argument 2");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 3, sizeof(cl_mem),
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_init, 3, sizeof(cl_mem),
 		(void *)&cl_saved_salt), "Error setting argument 3");
+
+	//crypt_kernel_loop
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_loop, 0, sizeof(cl_mem),
+		(void *)&cl_saved_key), "Error setting argument 0");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_loop, 1, sizeof(cl_mem),
+		(void *)&cl_saved_idx), "Error setting argument 1");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_loop, 2, sizeof(cl_mem),
+		(void *)&cl_result), "Error setting argument 2");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_loop, 3, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 3");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_loop, 4, sizeof(cl_mem),
+		(void *)&cl_job), "Error setting argument 4");
+
+	//crypt_kernel_finish_loop
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 0, sizeof(cl_mem),
+		(void *)&cl_saved_key), "Error setting argument 0");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 1, sizeof(cl_mem),
+		(void *)&cl_saved_idx), "Error setting argument 1");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 2, sizeof(cl_mem),
+		(void *)&cl_result), "Error setting argument 2");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 3, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 3");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 4, sizeof(cl_mem),
+		(void *)&cl_job), "Error setting argument 4");
+
+	//crypt_kernel_finish
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 0, sizeof(cl_mem),
+		(void *)&cl_saved_key), "Error setting argument 0");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 1, sizeof(cl_mem),
+		(void *)&cl_saved_idx), "Error setting argument 1");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 2, sizeof(cl_mem),
+		(void *)&cl_result), "Error setting argument 2");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 3, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 3");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 4, sizeof(cl_mem),
+		(void *)&cl_job), "Error setting argument 4");
 }
 
 static void release_clobj(void)
 {
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_result,
 		output, 0, NULL, NULL), "Error Unmapping output");
+	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_job,
+		job, 0, NULL, NULL), "Error Unmapping job");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_key,
 		saved_key, 0, NULL, NULL), "Error Unmapping saved_key");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_idx,
@@ -209,6 +274,8 @@ static void release_clobj(void)
 
 	HANDLE_CLERROR(clReleaseMemObject(pinned_result),
 	    "Release pinned result buffer");
+	HANDLE_CLERROR(clReleaseMemObject(pinned_job),
+	    "Release pinned job buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_key),
 	    "Release pinned key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_idx),
@@ -216,6 +283,7 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clReleaseMemObject(pinned_salt),
 	    "Release pinned index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_result), "Release result buffer");
+	HANDLE_CLERROR(clReleaseMemObject(cl_job), "Release job buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_key), "Release key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_idx),
 	    "Release index buffer");
@@ -241,17 +309,39 @@ static void init(struct fmt_main *self)
 
 	sprintf(build_opts,
 	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d -DHASH_LENGTH=%d -DAMD_GCN=%d", BINARY_SIZE, SALT_SIZE,PLAINTEXT_LENGTH,HASH_LENGTH,AMD_GCN);
+	printf("%s\n",build_opts);
 
 	opencl_build_kernel("$JOHN/kernels/parallel_kernel.cl", gpu_id, build_opts,1);
 
 	// create kernel to execute
-	crypt_kernel =
+	/*crypt_kernel =
 	    clCreateKernel(program[gpu_id], "parallel_crypt_kernel", &ret_code);
 	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel. Double-check kernel name?");
+	    "Error creating kernel. Double-check kernel name?");*/
+
+	crypt_kernel_init =
+	    clCreateKernel(program[gpu_id], "parallel_kernel_init", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel parallel_kernel_init. Double-check kernel name?");
+
+	crypt_kernel_loop =
+	    clCreateKernel(program[gpu_id], "parallel_kernel_loop", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel parallel_kernel_loop. Double-check kernel name?");
+
+	crypt_kernel_finish_loop =
+	    clCreateKernel(program[gpu_id], "parallel_kernel_finish_loop", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel parallel_kernel_finish. Double-check kernel name?");
+
+	crypt_kernel_finish =
+	    clCreateKernel(program[gpu_id], "parallel_kernel_finish", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel parallel_kernel_finish. Double-check kernel name?");
+
 
 	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
+	opencl_init_auto_setup(SEED, 0, split_events,
 	    warn, 4, self, create_clobj, release_clobj, BINARY_SIZE*2, 0);
 	
 	//Auto tune execution from shared/included code.
@@ -264,7 +354,11 @@ static void done(void)
 {
 	release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+	//releasing kernels
+	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_init), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_loop), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_finish_loop), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_finish), "Release kernel");
 	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 }
 
@@ -278,13 +372,22 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	    strncmp(ciphertext, "$parallel$", 10))
 		return 0;
 	i = ciphertext + 10;
-	//cost
+	//s_loops
 	next_dollar = strchr(i, '$');
 	if (next_dollar == NULL || next_dollar - i > 10 || next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
 	cost=atoi(i);
-	if ((cost & 0xffff) > 106 || (cost >> 16) > 126)
+	//if ((cost & 0xffff) > 106 || (cost >> 16) > 126) to do
+	if (cost > 126)
+		return 0;
+	//p_loops
+	next_dollar = strchr(i, '$');
+	if (next_dollar == NULL || next_dollar - i > 10 || next_dollar == i)
+		return 0;
+	i = next_dollar + 1;
+	cost=atoi(i);
+	if (cost > 106)
 		return 0;
 	//salt
 	next_dollar = strchr(i, '$');
@@ -299,7 +402,6 @@ static int valid(char *ciphertext, struct fmt_main *self)
 		return 0;
 	return 1;
 }
-
 
 static void set_key(char *key, int index)
 {
@@ -382,7 +484,7 @@ static void *get_salt(char *ciphertext)
 {
 	static struct parallel_salt salt;
 	char *i = ciphertext + 10;
-	char *first_dollar;
+	char *first_dollar,*second_dollar;
 	char *last_dollar = strrchr(ciphertext, '$');
 
 	memset(salt.salt, 0, sizeof(salt.salt));
@@ -390,11 +492,13 @@ static void *get_salt(char *ciphertext)
 	salt.hash_size = strlen(last_dollar + 1) / 2;
 
 	first_dollar = strchr(i, '$');
+	second_dollar = strchr(first_dollar+1, '$');
 
-	salt.salt_length = last_dollar - first_dollar - 1;
-	salt.cost = atoi(i);
+	salt.salt_length = last_dollar - second_dollar - 1;
+	salt.s_loops = atoi(i);
+	salt.p_loops = atoi(first_dollar+1);
 
-	memcpy(salt.salt, first_dollar + 1, salt.salt_length);
+	memcpy(salt.salt, second_dollar + 1, salt.salt_length);
 
 	return (void *)&salt;
 }
@@ -403,13 +507,26 @@ static void *get_salt(char *ciphertext)
 static void set_salt(void *salt)
 {
 	memcpy(saved_salt,salt,sizeof(struct parallel_salt));
+	sequentialLoops=calcLoopCount(((struct parallel_salt*)salt)->s_loops);
+	printf("\nhash_size=%u\n",((struct parallel_salt*)salt)->hash_size);
 }
 
 static int cmp_all(void *binary, int count)
 {
-	int i;
+	int i,j;
 
 	for (i = 0; i < count; i++) {
+		/*printf("\n# ");
+		for(j=0;j<saved_salt->hash_size;j++)
+		{
+			printf("%x ",((int)((char *)binary)[j]) & 0xff);
+		}
+		printf("\n= ");
+		for(j=0;j<saved_salt->hash_size;j++)
+		{
+			printf("%x ",(int)output[ i * BINARY_SIZE+j]);
+		}
+		printf("\n");*/
 		if (!memcmp(binary, output + i * BINARY_SIZE, saved_salt->hash_size))
 			return 1;
 	}
@@ -430,6 +547,7 @@ static int cmp_exact(char *source, int index)
 
 static int crypt_all(int *pcount, struct db_salt *salt)
 {
+	uint64_t i;
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
 
@@ -459,18 +577,48 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[2]), "Failed transferring index");
 
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_init, 1,
 		NULL, &global_work_size, lws, 0, NULL,
 		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
+
+	for(i=0;i<sequentialLoops-1;i++)
+	{
+		printf("i=%lu\n",i);
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
+		
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_finish_loop, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_finish_loop");
+	
+		HANDLE_CLERROR(clFinish(queue[gpu_id]),
+		               "Error running loop kernel");
+
+		opencl_process_event();
+	}
+
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
+		NULL, &global_work_size, lws, 0, NULL,
+		NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
+		
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_finish, 1,
+		NULL, &global_work_size, lws, 0, NULL,
+		NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_finish");
+	
+	HANDLE_CLERROR(clFinish(queue[gpu_id]),
+		"Error running loop kernel");
+
+	opencl_process_event();
 
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
 		multi_profilingEvent[4]), "failed in reading data back");
 	partial_output = 1;
-
-
+	
+	printf("odczytano dane\n");
 	return count;
 }
 
@@ -539,10 +687,16 @@ static int salt_hash(void *_salt)
 }
 
 #if FMT_MAIN_VERSION > 11
-static unsigned int tunable_cost_N(void *_salt)
+static unsigned int tunable_cost_s(void *_salt)
 {
 	struct parallel_salt *salt=(struct parallel_salt *)_salt;
-	return salt->cost;
+	return salt->s_loops;
+}
+
+static unsigned int tunable_cost_p(void *_salt)
+{
+	struct parallel_salt *salt=(struct parallel_salt *)_salt;
+	return salt->p_loops;
 }
 
 #endif
@@ -565,7 +719,8 @@ struct fmt_main fmt_opencl_parallel = {
 		FMT_CASE | FMT_8_BIT,
 #if FMT_MAIN_VERSION > 11
 		{
-				"N"
+			"s",
+			"p"
 		},
 #endif
 		tests
@@ -580,7 +735,8 @@ struct fmt_main fmt_opencl_parallel = {
 		get_salt,
 #if FMT_MAIN_VERSION > 11
 		{
-			tunable_cost_N
+			tunable_cost_s,
+			tunable_cost_p,
 		},
 #endif
 		fmt_default_source,

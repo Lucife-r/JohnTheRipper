@@ -62,7 +62,9 @@
 	#define WRITE_BIG_ENDIAN_64(n)                  (n)
 #endif
 
-int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int cost);
+inline uint64_t calcLoopCount(uint32_t cost);
+
+int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int s_loops, unsigned int p_loops);
 
 
 #endif

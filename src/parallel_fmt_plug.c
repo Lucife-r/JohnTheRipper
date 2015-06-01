@@ -63,6 +63,7 @@ static struct fmt_tests tests[] = {
 
 struct parallel_salt {
 	size_t cost;
+	size_t costt;//to do
 	size_t hash_size;
 	size_t salt_length;
 	char salt[SALT_SIZE];
@@ -236,7 +237,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
 		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
-		    saved_salt.salt_length, saved_salt.cost);
+		    saved_salt.salt_length, saved_salt.cost,0);//to do
 	}
 	return count;
 }

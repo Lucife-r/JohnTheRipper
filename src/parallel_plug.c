@@ -29,7 +29,7 @@
 
 #define HASH_LENGTH    64
 
-static inline uint64_t calcLoopCount(uint32_t cost)
+inline uint64_t calcLoopCount(uint32_t cost)//to do
 {
 	// floor((cost & 1 ? 2 : 3) * 2 ** floor((cost - 1) / 2))
 	// 1, 2, 3, 4, 6, 8, 12, 16, ...
@@ -89,7 +89,7 @@ static void hash(const void *message, size_t length, void *out, uint32_t outLeng
 	}
 }
 
-int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost)
+int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,unsigned int s_loops, unsigned int p_loops)
 {
 	uint64_t key [HASH_LENGTH / sizeof(uint64_t)];
 	uint64_t tmp [HASH_LENGTH / sizeof(uint64_t)];
@@ -102,7 +102,7 @@ int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void 
 	SHA512_CTX ctx;
 
 
-	if ((t_cost & 0xffff) > 106 || (t_cost >> 16) > 126 || outlen > HASH_LENGTH)
+	if (p_loops > 106 || s_loops > 126 || outlen > HASH_LENGTH)
 	{
 		memset(out, 0, outlen);
 		return 1;
@@ -117,8 +117,8 @@ int PARALLEL(void *out, size_t outlen, const void *in, size_t inlen, const void 
 	SHA512_Final((unsigned char *)key, &ctx);
 
 	// Work
-	parallelLoops = 3 * 5 * 128 * calcLoopCount(t_cost & 0xffff);
-	sequentialLoops = calcLoopCount(t_cost >> 16);
+	parallelLoops = 3 * 5 * 128 * calcLoopCount(p_loops);
+	sequentialLoops = calcLoopCount(s_loops);
 
 	for (i = 0; i < sequentialLoops; i++)
 	{
