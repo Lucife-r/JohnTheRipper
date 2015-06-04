@@ -47,8 +47,8 @@
  *
  * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
  */
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost) {
-    return LYRA2_(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, N_COLS);
+int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct lyra2_allocation *allocated) {
+    return LYRA2_(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, N_COLS,allocated);
 }
 
 #if (nPARALLEL == 1)
@@ -246,8 +246,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     free(memMatrix);
     free(wholeMatrix);
 
-    //Wiping out the sponge's internal state before freeing it
-    memset(state, 0, 16 * sizeof (uint64_t));
     free(state);
     //==========================================================================/
 
@@ -275,15 +273,21 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
  *
  * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
  */
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols) {
+int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols,struct lyra2_allocation *allocated) {
     //============================= Basic variables ============================//
     int64_t i,j;        //auxiliary iteration counter
     //==========================================================================/
+    
+    //================================= Buffers ================================//
     uint64_t **memMatrix;
     unsigned char **pKeys;
+    uint64_t *threadSliceMatrix[nPARALLEL];
+    unsigned char *threadKey[nPARALLEL];
+    uint64_t *threadState[nPARALLEL];
+    //==========================================================================/
 
 
-	//============================= Basic threads variables ============================//
+    //============================= Basic threads variables ============================//
     uint64_t threadNumber;
     uint64_t halfSlice ;
 
@@ -301,7 +305,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     uint64_t prevP[nPARALLEL];             //prevP: stores the previous value of rowP
 
 
-    uint64_t iP;
     uint64_t jP[nPARALLEL];                     //Starts with threadNumber.
     uint64_t kP[nPARALLEL];
     uint64_t wCont;
@@ -313,11 +316,8 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     uint64_t sliceStart[nPARALLEL];
 
-    uint64_t *threadSliceMatrix[nPARALLEL];
 
     uint64_t *ptrWord[nPARALLEL];
-    unsigned char *threadKey[nPARALLEL];
-    uint64_t *threadState[nPARALLEL];
 
 
     sizeSlicedRows = nRows/nPARALLEL;
@@ -325,17 +325,9 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     //========== Initializing the Memory Matrix and pointers to it =============//
     //Allocates pointers to each row of the matrix
-    memMatrix = malloc(nRows * sizeof (uint64_t*));
-    if (memMatrix == NULL) {
-        return -1;
-    }
+    memMatrix = allocated->memMatrix;
    //Allocates pointers to each key
-    pKeys = malloc(nPARALLEL * sizeof (unsigned char*));
-    if (pKeys == NULL) {
-        return -1;
-    }
-
-    iP = (uint64_t) ((uint64_t) sizeSlicedRows * (uint64_t) ROW_LEN_BYTES);	
+    pKeys = allocated->pKeys;	
 
     for(i=0;i<nPARALLEL;i++)
     {      
@@ -364,11 +356,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //========================== BootStrapping Phase ==========================//
 	sliceStart[threadNumber] = threadNumber*sizeSlicedRows;
 
-	threadSliceMatrix[threadNumber] = malloc(iP);
-	if (threadSliceMatrix[threadNumber] == NULL) {
-            printf("Error: unable to allocate memory (nRows too large?)\n");
-            exit(EXIT_FAILURE);
-        }
+	threadSliceMatrix[threadNumber] = allocated->threadSliceMatrix[threadNumber];
 
         //Places the pointers in the correct positions
         ptrWord[threadNumber] = threadSliceMatrix[threadNumber];
@@ -377,10 +365,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             ptrWord[threadNumber] += ROW_LEN_INT64;
         }
 
-        threadKey[threadNumber] =  malloc(kLen); //to do: can be local
-        if (threadKey[threadNumber] == NULL) {
-            exit(EXIT_FAILURE);
-        }
+        threadKey[threadNumber] =  allocated->threadKey[threadNumber];
 
         //Places the pointers in the correct positions
         pKeys[threadNumber] = threadKey[threadNumber];
@@ -436,10 +421,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //============== Initializing the Sponge State =============/
         //Sponge state: 16 uint64_t, BLOCK_LEN_INT64 words of them for the bitrate (b) and the remainder for the capacity (c)
         //Thread State
-        threadState[threadNumber] = malloc(16 * sizeof (uint64_t));
-        if (threadState[threadNumber] == NULL) {
-            exit(EXIT_FAILURE);
-        }
+        threadState[threadNumber] = allocated->threadState[threadNumber];
         initState(threadState[threadNumber]);
 
         
@@ -570,12 +552,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //Squeezes the key
         squeeze(threadState[threadNumber], threadKey[threadNumber], kLen);
 
-        //========================= Freeing the thread memory =============================//
-        free(threadSliceMatrix[threadNumber]);
-
-        //Wiping out the sponge's internal state before freeing it
-        memset(threadState[threadNumber], 0, 16 * sizeof (uint64_t));
-        free(threadState[threadNumber]);
     }   // Parallelism End
 
     // XORs all Keys
@@ -587,19 +563,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     // Returns in the correct variable
     memcpy(K, pKeys[0], kLen);
-
-
-    //========================= Freeing the memory =============================//
-    free(memMatrix);
-
-    //Free each thread Key
-    for (i = 0; i < nPARALLEL; i++) {
-        free(pKeys[i]);
-    }
-    //Free the pointers to allKeys
-    free(pKeys);
-
-    //==========================================================================/
 
     return 0;
 }
