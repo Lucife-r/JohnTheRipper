@@ -314,11 +314,6 @@ static void init(struct fmt_main *self)
 
 	opencl_build_kernel("$JOHN/kernels/parallel_kernel.cl", gpu_id, build_opts,1);
 
-	// create kernel to execute
-	/*crypt_kernel =
-	    clCreateKernel(program[gpu_id], "parallel_crypt_kernel", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel. Double-check kernel name?");*/
 
 	crypt_kernel_init =
 	    clCreateKernel(program[gpu_id], "parallel_kernel_init", &ret_code);
