@@ -106,7 +106,7 @@ static void aligned_free(void *p)
 int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
 {
-	uint64_t i, j, k;
+	uint64_t i, j;
 	uint64_t i0, i1, i2, i3, i4;
 	__m256i *S;
 	uint64_t random_number, index_global, index_local;
