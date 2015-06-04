@@ -69,12 +69,13 @@ static inline uint64_t rotr64( const uint64_t w, const unsigned c ){
 static inline uint64_t fBlaMka(uint64_t x, uint64_t y){
     uint32_t lessX = (uint32_t) x;
     uint32_t lessY = (uint32_t) y;
+    uint64_t z;
     
     uint64_t lessZ = (uint64_t) lessX;
     lessZ = lessZ * lessY;
     lessZ = lessZ << 1;
     
-    uint64_t z = lessZ + x + y;
+    z = lessZ + x + y;
     
     return z;
 }

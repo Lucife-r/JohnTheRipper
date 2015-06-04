@@ -24,10 +24,6 @@
 
 typedef unsigned char byte ;
 
-struct lyra2_allocation{
-	uint64_t **memMatrix;
-	unsigned char **pKeys;
-};
 
 #ifndef N_COLS
         #define N_COLS 256                                      //Number of columns in the memory matrix: fixed to 256 by default
@@ -40,6 +36,14 @@ struct lyra2_allocation{
 #define ROW_LEN_INT64 (BLOCK_LEN_INT64 * N_COLS)                //Total length of a row: N_COLS blocks
 #define ROW_LEN_BYTES (ROW_LEN_INT64 * 8)                       //Number of bytes per row
 
+struct lyra2_allocation{
+    uint64_t **memMatrix;
+    unsigned char **pKeys;
+    uint64_t *threadSliceMatrix[nPARALLEL];
+    unsigned char *threadKey[nPARALLEL];
+    uint64_t *threadState[nPARALLEL];
+};
+
 #if (nPARALLEL == 1)
 
 int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols);
@@ -50,9 +54,9 @@ int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *sa
 
 #if (nPARALLEL > 1)
 
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols,int threadNumber,struct lyra2_allocation allocated);
+int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols,int threadNumber,struct lyra2_allocation *allocated);
 
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost,int threadNumber,struct lyra2_allocation allocated);
+int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost,int threadNumber,struct lyra2_allocation *allocated);
 
 #endif
 
