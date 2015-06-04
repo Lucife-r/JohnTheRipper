@@ -279,83 +279,88 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     //============================= Basic variables ============================//
     int64_t i,j;        //auxiliary iteration counter
     //==========================================================================/
+    uint64_t **memMatrix;
+    unsigned char **pKeys;
+
+
+	//============================= Basic threads variables ============================//
+    uint64_t threadNumber;
+    uint64_t halfSlice ;
+
+    int64_t gap[nPARALLEL];                //Modifier to the step, assuming the values 1 or -1
+    uint64_t step[nPARALLEL];              //Visitation step (used during Setup and Wandering phases)
+    uint64_t window[nPARALLEL];            //Visitation window (used to define which rows can be revisited during Setup)
+    uint64_t sync[nPARALLEL];              //Synchronize counter
+    uint64_t sqrt[nPARALLEL];              //Square of window (i.e., square(window)), when a window is a square number;
+                                        //otherwise, sqrt = 2*square(window/2) 
+          
+
+    uint64_t row0[nPARALLEL];              //row0: sequentially written during Setup; randomly picked during Wandering
+    uint64_t prev0[nPARALLEL];             //prev0: stores the previous value of row0
+    uint64_t rowP[nPARALLEL];              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
+    uint64_t prevP[nPARALLEL];             //prevP: stores the previous value of rowP
+
+
+    uint64_t iP;
+    uint64_t jP[nPARALLEL];                     //Starts with threadNumber.
+    uint64_t kP[nPARALLEL];
+    uint64_t wCont;
+        
+    uint64_t sizeSlicedRows;
+    uint64_t off0[nPARALLEL];
+    uint64_t offP[nPARALLEL];
+    uint64_t row00;
+
+    uint64_t sliceStart[nPARALLEL];
+
+    uint64_t *threadSliceMatrix[nPARALLEL];
+
+    uint64_t *ptrWord[nPARALLEL];
+    unsigned char *threadKey[nPARALLEL];
+    uint64_t *threadState[nPARALLEL];
+
+
+    sizeSlicedRows = nRows/nPARALLEL;
+    halfSlice = sizeSlicedRows/2;
 
     //========== Initializing the Memory Matrix and pointers to it =============//
     //Allocates pointers to each row of the matrix
-    uint64_t **memMatrix = malloc(nRows * sizeof (uint64_t*));
+    memMatrix = malloc(nRows * sizeof (uint64_t*));
     if (memMatrix == NULL) {
         return -1;
     }
    //Allocates pointers to each key
-    unsigned char **pKeys = malloc(nPARALLEL * sizeof (unsigned char*));
+    pKeys = malloc(nPARALLEL * sizeof (unsigned char*));
     if (pKeys == NULL) {
         return -1;
     }
 
+    iP = (uint64_t) ((uint64_t) sizeSlicedRows * (uint64_t) ROW_LEN_BYTES);	
 
-	//============================= Basic threads variables ============================//
-	uint64_t threadNumber;
-	uint64_t halfSlice ;
+    for(i=0;i<nPARALLEL;i++)
+    {      
 
-	int64_t gap[nPARALLEL];                //Modifier to the step, assuming the values 1 or -1
-        uint64_t step[nPARALLEL];              //Visitation step (used during Setup and Wandering phases)
-        uint64_t window[nPARALLEL];            //Visitation window (used to define which rows can be revisited during Setup)
-        uint64_t sync[nPARALLEL];              //Synchronize counter
-        uint64_t sqrt[nPARALLEL];              //Square of window (i.e., square(window)), when a window is a square number;
-                                        //otherwise, sqrt = 2*square(window/2) 
-          
-
-        uint64_t row0[nPARALLEL];              //row0: sequentially written during Setup; randomly picked during Wandering
-        uint64_t prev0[nPARALLEL];             //prev0: stores the previous value of row0
-        uint64_t rowP[nPARALLEL];              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
-        uint64_t prevP[nPARALLEL];             //prevP: stores the previous value of rowP
-
-
-	uint64_t iP;
-        uint64_t jP[nPARALLEL];                     //Starts with threadNumber.
-        uint64_t kP[nPARALLEL];
-        uint64_t wCont;
-        
-        uint64_t sizeSlicedRows;
-        uint64_t off0[nPARALLEL];
-        uint64_t offP[nPARALLEL];
-	uint64_t row00;
-
-	uint64_t sliceStart[nPARALLEL];
-
-	uint64_t *threadSliceMatrix[nPARALLEL];
-
-	uint64_t *ptrWord[nPARALLEL];
-	unsigned char *threadKey[nPARALLEL];
-	uint64_t *threadState[nPARALLEL];
-
-
-	sizeSlicedRows = nRows/nPARALLEL;
-	halfSlice = sizeSlicedRows/2;
-	iP = (uint64_t) ((uint64_t) sizeSlicedRows * (uint64_t) ROW_LEN_BYTES);	
-
-	for(i=0;i<nPARALLEL;i++)
-	{      
-
-		gap[i] = 1;                //Modifier to the step, assuming the values 1 or -1
-		step[i] = 1;              //Visitation step (used during Setup and Wandering phases)
-		window[i] = 2;            //Visitation window (used to define which rows can be revisited during Setup)
-		sync[i] = 4;              //Synchronize counter
-		sqrt[i] = 2;              //Square of window (i.e., square(window)), when a window is a square number;
+	gap[i] = 1;                //Modifier to the step, assuming the values 1 or -1
+	step[i] = 1;              //Visitation step (used during Setup and Wandering phases)
+	window[i] = 2;            //Visitation window (used to define which rows can be revisited during Setup)
+	sync[i] = 4;              //Synchronize counter
+	sqrt[i] = 2;              //Square of window (i.e., square(window)), when a window is a square number;
 		                                //otherwise, sqrt = 2*square(window/2) 
 		  
 
-		row0[i] = 3;              //row0: sequentially written during Setup; randomly picked during Wandering
-		prev0[i] = 2;             //prev0: stores the previous value of row0
-		rowP[i] = 1;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
-		prevP[i] = 0;             //prevP: stores the previous value of rowP
+	row0[i] = 3;              //row0: sequentially written during Setup; randomly picked during Wandering
+	prev0[i] = 2;             //prev0: stores the previous value of row0
+	rowP[i] = 1;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
+	prevP[i] = 0;             //prevP: stores the previous value of rowP
 
-	}  
+    }  
         //==========================================================================/
 
     for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
     {
-
+	uint64_t nBlocksInput;
+	byte *ptrByte;
+	int p;
         //========================== BootStrapping Phase ==========================//
 	sliceStart[threadNumber] = threadNumber*sizeSlicedRows;
 
@@ -389,8 +394,8 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
         //First, we clean enough blocks for the password, salt, params and padding
         //Change the ''8'' if different amounts of parameters were passed 
-        uint64_t nBlocksInput = ((saltlen + pwdlen + 8 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
-        byte *ptrByte = (byte*) threadSliceMatrix[threadNumber];
+        nBlocksInput = ((saltlen + pwdlen + 8 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+        ptrByte = (byte*) threadSliceMatrix[threadNumber];
         memset(ptrByte, 0, nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES);
 
         //Prepends the password
@@ -414,7 +419,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         ptrByte += sizeof (int);
         memcpy(ptrByte, &nCols, sizeof (int));
         ptrByte += sizeof (int);
-        int p = nPARALLEL;
+        p = nPARALLEL;
         memcpy(ptrByte, &p, sizeof (int));
         ptrByte += sizeof (int);
         memcpy(ptrByte, &threadNumber, sizeof (int));

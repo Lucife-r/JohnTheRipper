@@ -200,7 +200,7 @@ static void set_salt(void *salt)
 
 static int cmp_all(void *binary, int count)
 {
-	int i,j;
+	int i;
 
 	for (i = 0; i < count; i++) {
 		if (!memcmp(binary, crypted + i * BINARY_SIZE, saved_salt.hash_size))
