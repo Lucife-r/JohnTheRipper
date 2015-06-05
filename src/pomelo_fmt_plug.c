@@ -75,18 +75,26 @@ struct pomelo_salt {
 };
 
 static struct pomelo_salt saved_salt;
+static struct pomelo_allocation *allocated;
 
 static char *saved_key;
+static int threads;
+int prev_m_cost;
 
 static unsigned char *crypted;
+
+static void free_allocated();
 
 static void init(struct fmt_main *self)
 {
 #ifdef _OPENMP
 	int omp_t = omp_get_max_threads();
+	threads=omp_get_max_threads();
 	self->params.min_keys_per_crypt *= omp_t;
 	omp_t *= OMP_SCALE;
 	self->params.max_keys_per_crypt *= omp_t;
+#else
+	threads=1;
 #endif
 	saved_key =
 	    malloc(self->params.max_keys_per_crypt * (PLAINTEXT_LENGTH + 1));
@@ -94,10 +102,13 @@ static void init(struct fmt_main *self)
 	    self->params.max_keys_per_crypt * (PLAINTEXT_LENGTH + 1));
 	crypted = malloc(self->params.max_keys_per_crypt * (BINARY_SIZE));
 	memset(crypted, 0, self->params.max_keys_per_crypt * (BINARY_SIZE));
+
+	prev_m_cost=-1;
 }
 
 static void done(void)
 {
+	free_allocated();
 	free(saved_key);
 	free(crypted);
 }
@@ -205,9 +216,38 @@ static void *get_salt(char *ciphertext)
 }
 
 
+static void free_allocated()
+{
+	int i;
+
+	if(prev_m_cost==-1)
+		return;
+
+	for(i=0;i<threads;i++)
+	{
+		free(allocated[i].alloc); 
+	}
+	free(allocated);
+}
+
 static void set_salt(void *salt)
 {
+	int i;
+	size_t mem_size;
 	memcpy(&saved_salt,salt,sizeof(struct pomelo_salt));
+	if(prev_m_cost>=(int)saved_salt.m_cost)
+		return;
+	mem_size= 1ULL << (13 + saved_salt.m_cost);
+	free_allocated();
+	prev_m_cost=saved_salt.m_cost;
+	allocated=malloc(threads*(sizeof(struct pomelo_allocation)));
+	for(i=0;i<threads;i++)
+	{
+		allocated[i].alloc=malloc(mem_size+ALIGN);
+		allocated[i].buffer=allocated[i].alloc;
+		while((size_t)allocated[i].buffer%ALIGN)
+			allocated[i].buffer++;
+	}
 }
 
 static int cmp_all(void *binary, int count)
@@ -251,7 +291,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
 		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
-		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost);
+		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, &allocated[omp_get_thread_num()%threads]);
 	}
 	return count;
 }

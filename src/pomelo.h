@@ -16,21 +16,28 @@
 #include <inttypes.h>
 #include "arch.h"
 
+#define ALIGN 4096
+
+struct pomelo_allocation{
+    char *buffer;
+    char *alloc;
+};
+
 int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
+    unsigned int m_cost, struct pomelo_allocation *allocated);
 
 #ifdef __AVX2__
 int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
+    unsigned int m_cost, struct pomelo_allocation *allocated);
 
 
 #elif defined(SIMD_COEF_64)
 
 int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
     const void *salt, size_t saltlen, unsigned int t_cost,
-    unsigned int m_cost);
+    unsigned int m_cost, struct pomelo_allocation *allocated);
 
 #endif
 

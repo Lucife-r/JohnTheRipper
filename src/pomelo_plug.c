@@ -110,7 +110,7 @@
 }
 
 int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct pomelo_allocation *allocated)
 {
 	uint64_t i, j, temp;
 	uint64_t i0, i1, i2, i3, i4;
@@ -125,7 +125,7 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (uint64_t *) malloc(state_size);
+	S = (uint64_t *) allocated->buffer;
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/8; 
 
@@ -171,7 +171,6 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 7: Generate the output   
 	memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
-	free(S);		// free the memory
 
 	return 0;
 }

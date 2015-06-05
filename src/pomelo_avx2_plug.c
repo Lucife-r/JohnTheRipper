@@ -83,28 +83,9 @@
     }                                                                               \
 }
 
-static void *aligned_malloc(size_t required_bytes, size_t alignment)
-{
-	void *p1;		// original block
-	void **p2;		// aligned block
-	int offset = alignment - 1 + sizeof(void *);
-	if ((p1 = (void *)malloc(required_bytes + offset)) == NULL) {
-		return NULL;
-	}
-	p2 = (void **)(((size_t) (p1) + offset) & ~(alignment - 1));
-	p2[-1] = p1;
-	return p2;
-}
-
-static void aligned_free(void *p)
-{
-	free(((void **)p)[-1]);
-}
-
-
 
 int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost)
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct pomelo_allocation *allocated)
 {
 	uint64_t i, j;
 	uint64_t i0, i1, i2, i3, i4;
@@ -119,7 +100,7 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (__m256i *) aligned_malloc(state_size, 32);	// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
+	S = (__m256i *) allocated->buffer;	// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32
 
 	//Step 2: Load the password, salt, input/output sizes into the state S
@@ -164,7 +145,6 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 7: Generate the output   
 	memcpy(out, ((unsigned char *)S) + state_size - outlen, outlen);
-	aligned_free(S);	// free the memory
 
 	return 0;
 }
