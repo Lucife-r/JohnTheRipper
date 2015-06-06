@@ -24,27 +24,37 @@
 
 typedef unsigned char byte ;
 
-#ifndef N_COLS
-        #define N_COLS 256                                      //Number of columns in the memory matrix: fixed to 256 by default
-#endif
-
-#ifndef nPARALLEL
-        #define nPARALLEL 2                                     //Number of parallel threads
-#endif
-
-#define ROW_LEN_INT64 (BLOCK_LEN_INT64 * N_COLS)                //Total length of a row: N_COLS blocks
-#define ROW_LEN_BYTES (ROW_LEN_INT64 * 8)                       //Number of bytes per row
+extern unsigned short N_COLS;
+extern int nCols_is_2_power;
 
 struct lyra2_allocation{
     uint64_t **memMatrix;
     unsigned char **pKeys;
-    uint64_t *threadSliceMatrix[nPARALLEL];
-    unsigned char *threadKey[nPARALLEL];
-    uint64_t *threadState[nPARALLEL];
+    uint64_t **threadSliceMatrix;
+    unsigned char **threadKey;
+    uint64_t **threadState;
+
+    int64_t *gap;                //Modifier to the step, assuming the values 1 or -1
+    uint64_t *step;              //Visitation step (used during Setup and Wandering phases)
+    uint64_t *window;            //Visitation window (used to define which rows can be revisited during Setup)
+    uint64_t *sync;              //Synchronize counter
+    uint64_t *sqrt;              //Square of window (i.e., square(window)), when a window is a square number;
+    uint64_t *row0;              //row0: sequentially written during Setup; randomly picked during Wandering
+    uint64_t *prev0;             //prev0: stores the previous value of row0
+    uint64_t *rowP;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
+    uint64_t *prevP;             //prevP: stores the previous value of rowP
+    uint64_t *jP;                //Starts with threadNumber.
+    uint64_t *kP;
+    uint64_t *off0;
+    uint64_t *offP;
+    uint64_t *sliceStart;
+    uint64_t **ptrWord;
 };
 
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, struct lyra2_allocation *allocated);
+int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, unsigned int nThreads, struct lyra2_allocation *allocated);
 
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct lyra2_allocation *allocated);
+int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, struct lyra2_allocation *allocated);
+
+int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, unsigned int nCols, unsigned int nThreads, struct lyra2_allocation *allocated);
 
 #endif /* LYRA2_H_ */ 

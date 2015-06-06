@@ -17,7 +17,10 @@
  * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * This file was modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com> on June,2015.
  */
+
 #include <string.h>
 #include <stdio.h>
 
@@ -330,10 +333,35 @@ inline void reducedDuplexRowWanderingParallel(uint64_t *state, uint64_t *rowInOu
 
     int i, j;
 
+    unsigned int nCols1=N_COLS-1;
+
+    if(nCols_is_2_power)
     for (i = 0; i < N_COLS; i++) {
         //col0 = lsw(rot^3(rand)) mod N_COLS
-        //randomColumn0 = ((uint64_t)state[6] & (N_COLS-1))*BLOCK_LEN_INT64;       /*(USE THIS IF N_COLS IS A POWER OF 2)*/
-        randomColumn0 = ((uint64_t)state[6] % N_COLS)*BLOCK_LEN_INT64;             /*(USE THIS FOR THE "GENERIC" CASE)*/
+        randomColumn0 = ((uint64_t)state[6] & nCols1)*BLOCK_LEN_INT64;           
+        ptrWordIn0 = rowIn0 + randomColumn0;  
+        
+        //Absorbing "M[row0] [+] M[prev0] [+] M[row0p]"
+        for (j = 0; j < BLOCK_LEN_INT64; j++) {
+            state[j]  ^= (ptrWordInOut0[j] + ptrWordIn0[j] + ptrWordInP[j]);
+        } 
+
+        //Applies the reduced-round transformation f to the sponge's state
+        reducedSpongeLyra(state);
+        
+        //M[rowInOut0][col] = M[rowInOut0][col] XOR rand
+        for (j = 0; j < BLOCK_LEN_INT64; j++){
+            ptrWordInOut0[j]  ^= state[j];
+        }
+        
+        //Goes to next column
+        ptrWordInOut0 += BLOCK_LEN_INT64;
+        ptrWordInP += BLOCK_LEN_INT64; 
+    }
+    else
+    for (i = 0; i < N_COLS; i++) {
+        //col0 = lsw(rot^3(rand)) mod N_COLS
+        randomColumn0 = ((uint64_t)state[6] % (N_COLS))*BLOCK_LEN_INT64;          
         ptrWordIn0 = rowIn0 + randomColumn0;  
         
         //Absorbing "M[row0] [+] M[prev0] [+] M[row0p]"

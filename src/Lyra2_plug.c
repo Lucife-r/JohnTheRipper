@@ -47,11 +47,12 @@
  *
  * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
  */
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct lyra2_allocation *allocated) {
-    return LYRA2_(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, N_COLS,allocated);
+int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, unsigned int nCols, unsigned int nThreads, struct lyra2_allocation *allocated) {
+    if(nThreads==1)
+        return LYRA2_for_nThreads1(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, N_COLS, allocated);
+    return LYRA2_(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, nCols, nThreads, allocated);
 }
 
-#if (nPARALLEL == 1)
 /**
  * Executes Lyra2 based on the G function from Blake2b or BlaMka. This version supports salts and passwords
  * whose combined length is smaller than the size of the memory matrix, (i.e., (nRows x nCols x b) bits,
@@ -71,7 +72,7 @@ int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *sa
  *
  * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
  */
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols) {
+int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, struct lyra2_allocation *allocated) {
     //============================= Basic variables ============================//
     int64_t gap = 1;            //Modifier to the step, assuming the values 1 or -1
     uint64_t step = 1;          //Visitation step (used during Setup to dictate the sequence in which rows are read)
@@ -85,25 +86,29 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     uint64_t prev1 = 0;         //prev1: stores the previous value of row1
 
     uint64_t i;                 //auxiliary iteration counter
+
+    uint64_t *ptrWord;
+    uint64_t nBlocksInput;
+    //==========================================================================/
+    //================================= Buffers ================================//
+    uint64_t *wholeMatrix;
+    uint64_t **memMatrix;
+    byte *ptrByte;
+    uint64_t *state;
     //==========================================================================/
     
     //========== Initializing the Memory Matrix and pointers to it =============//
     //Tries to allocate enough space for the whole memory matrix
-    i = (uint64_t) ((uint64_t) nRows * (uint64_t) ROW_LEN_BYTES);
-    uint64_t *wholeMatrix = malloc(i);
-    if (wholeMatrix == NULL) {
-	return -1;
-    }
+    i = (uint64_t) ((uint64_t) nRows * (uint64_t) (BLOCK_LEN_INT64 * nCols * 8));
+    wholeMatrix=allocated->threadSliceMatrix[0];
     //Allocates pointers to each row of the matrix
-    uint64_t **memMatrix = malloc(nRows * sizeof (uint64_t*));
-    if (memMatrix == NULL) {
-	return -1;
-    }
+    memMatrix = allocated->memMatrix;
+
     //Places the pointers in the correct positions
-    uint64_t *ptrWord = wholeMatrix;
+    ptrWord = wholeMatrix;
     for (i = 0; i < nRows; i++) {
 	memMatrix[i] = ptrWord;
-	ptrWord += ROW_LEN_INT64;
+	ptrWord += BLOCK_LEN_INT64 * nCols;
     }
     
     //==========================================================================/
@@ -115,8 +120,8 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     //First, we clean enough blocks for the password, salt, params and padding
     //Change the ''6'' if different amounts of parameters were passed 
-    uint64_t nBlocksInput = ((saltlen + pwdlen + 6 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
-    byte *ptrByte = (byte*) wholeMatrix;
+    nBlocksInput = ((saltlen + pwdlen + 6 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+    ptrByte = (byte*) wholeMatrix;
     memset(ptrByte, 0, nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES);
 
     //Prepends the password
@@ -151,10 +156,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     //======================= Initializing the Sponge State ====================//
     //Sponge state: 16 uint64_t, BLOCK_LEN_INT64 words of them for the bitrate (b) and the remainder for the capacity (c)
-    uint64_t *state = malloc(16 * sizeof (uint64_t));
-    if (state == NULL) {
-	return -1;
-    }
+    state = allocated->threadState[0];
     initState(state);
     
     //==========================================================================/
@@ -246,14 +248,14 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     free(memMatrix);
     free(wholeMatrix);
 
+    //Wiping out the sponge's internal state before freeing it
+    memset(state, 0, 16 * sizeof (uint64_t));
     free(state);
     //==========================================================================/
 
     return 0;
 }
-#endif
 
-#if (nPARALLEL > 1)
 /**
  * Executes Lyra2 based on the G function from Blake2b or BlaMka. This version supports salts and passwords
  * whose combined length is smaller than the size of the memory matrix, (i.e., (nRows x nCols x b) bits,
@@ -273,7 +275,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
  *
  * @return 0 if the key is generated correctly; -1 if there is an error (usually due to lack of memory for allocation)
  */
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols,struct lyra2_allocation *allocated) {
+int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, unsigned int nThreads, struct lyra2_allocation *allocated) {
     //============================= Basic variables ============================//
     int64_t i,j;        //auxiliary iteration counter
     //==========================================================================/
@@ -281,9 +283,9 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     //================================= Buffers ================================//
     uint64_t **memMatrix;
     unsigned char **pKeys;
-    uint64_t *threadSliceMatrix[nPARALLEL];
-    unsigned char *threadKey[nPARALLEL];
-    uint64_t *threadState[nPARALLEL];
+    uint64_t **threadSliceMatrix=allocated->threadSliceMatrix;
+    unsigned char **threadKey=allocated->threadKey;
+    uint64_t **threadState=allocated->threadState;
     //==========================================================================/
 
 
@@ -291,36 +293,36 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     uint64_t threadNumber;
     uint64_t halfSlice ;
 
-    int64_t gap[nPARALLEL];                //Modifier to the step, assuming the values 1 or -1
-    uint64_t step[nPARALLEL];              //Visitation step (used during Setup and Wandering phases)
-    uint64_t window[nPARALLEL];            //Visitation window (used to define which rows can be revisited during Setup)
-    uint64_t sync[nPARALLEL];              //Synchronize counter
-    uint64_t sqrt[nPARALLEL];              //Square of window (i.e., square(window)), when a window is a square number;
+    int64_t *gap=allocated->gap;                //Modifier to the step, assuming the values 1 or -1
+    uint64_t *step=allocated->step;              //Visitation step (used during Setup and Wandering phases)
+    uint64_t *window=allocated->window;            //Visitation window (used to define which rows can be revisited during Setup)
+    uint64_t *sync=allocated->sync;              //Synchronize counter
+    uint64_t *sqrt=allocated->sqrt;              //Square of window (i.e., square(window)), when a window is a square number;
                                         //otherwise, sqrt = 2*square(window/2) 
           
 
-    uint64_t row0[nPARALLEL];              //row0: sequentially written during Setup; randomly picked during Wandering
-    uint64_t prev0[nPARALLEL];             //prev0: stores the previous value of row0
-    uint64_t rowP[nPARALLEL];              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
-    uint64_t prevP[nPARALLEL];             //prevP: stores the previous value of rowP
+    uint64_t *row0=allocated->row0;              //row0: sequentially written during Setup; randomly picked during Wandering
+    uint64_t *prev0=allocated->prev0;             //prev0: stores the previous value of row0
+    uint64_t *rowP=allocated->rowP;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
+    uint64_t *prevP=allocated->prevP;             //prevP: stores the previous value of rowP
 
 
-    uint64_t jP[nPARALLEL];                     //Starts with threadNumber.
-    uint64_t kP[nPARALLEL];
+    uint64_t *jP=allocated->jP;                     //Starts with threadNumber.
+    uint64_t *kP=allocated->kP;
     uint64_t wCont;
         
     uint64_t sizeSlicedRows;
-    uint64_t off0[nPARALLEL];
-    uint64_t offP[nPARALLEL];
+    uint64_t *off0=allocated->off0;
+    uint64_t *offP=allocated->offP;
     uint64_t row00;
 
-    uint64_t sliceStart[nPARALLEL];
+    uint64_t *sliceStart=allocated->sliceStart;
 
 
-    uint64_t *ptrWord[nPARALLEL];
+    uint64_t **ptrWord=allocated->ptrWord;
 
 
-    sizeSlicedRows = nRows/nPARALLEL;
+    sizeSlicedRows = nRows/nThreads;
     halfSlice = sizeSlicedRows/2;
 
     //========== Initializing the Memory Matrix and pointers to it =============//
@@ -329,7 +331,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
    //Allocates pointers to each key
     pKeys = allocated->pKeys;	
 
-    for(i=0;i<nPARALLEL;i++)
+    for(i=0;i<nThreads;i++)
     {      
 
 	gap[i] = 1;                //Modifier to the step, assuming the values 1 or -1
@@ -348,7 +350,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     }  
         //==========================================================================/
 
-    for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
     {
 	uint64_t nBlocksInput;
 	byte *ptrByte;
@@ -362,7 +364,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         ptrWord[threadNumber] = threadSliceMatrix[threadNumber];
         for (kP[threadNumber] = 0; kP[threadNumber] < sizeSlicedRows; kP[threadNumber]++) { //to do
             memMatrix[threadNumber*sizeSlicedRows + kP[threadNumber]] = ptrWord[threadNumber];
-            ptrWord[threadNumber] += ROW_LEN_INT64;
+            ptrWord[threadNumber] += ((BLOCK_LEN_INT64 * nCols));
         }
 
         threadKey[threadNumber] =  allocated->threadKey[threadNumber];
@@ -404,7 +406,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         ptrByte += sizeof (int);
         memcpy(ptrByte, &nCols, sizeof (int));
         ptrByte += sizeof (int);
-        p = nPARALLEL;
+        p = nThreads;
         memcpy(ptrByte, &p, sizeof (int));
         ptrByte += sizeof (int);
         memcpy(ptrByte, &threadNumber, sizeof (int));
@@ -458,10 +460,10 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             //Mi[row00][N_COLS-1-col] = Mi[prev0][col] XOR rand;
             //Mj[rowP][col] = Mj[rowP][col] XOR rot(rand)                    rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 	    
-	    for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
             	reducedDuplexRowFilling(threadState[threadNumber], memMatrix[jP[threadNumber]*sizeSlicedRows + rowP[threadNumber]], memMatrix[sliceStart[threadNumber] + 			prev0[threadNumber]], memMatrix[jP[threadNumber]*sizeSlicedRows + prevP[threadNumber]], memMatrix[sliceStart[threadNumber] + row00]);
             
-	    for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
 		//Updates the "prev" indices: the rows more recently updated
             	prev0[threadNumber] = row00;
@@ -480,17 +482,17 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 		    }
 		 }
 	    } 
-	    for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
 		 //Synchronize threads and change the slices
 		 if (row00 == sync[threadNumber]) {
 		        sync[threadNumber] += sqrt[threadNumber]/2;                 //increment synchronize counter
-		        jP[threadNumber] = (jP[threadNumber] + 1) % nPARALLEL;      //change the visitation thread
+		        jP[threadNumber] = (jP[threadNumber] + 1) % nThreads;      //change the visitation thread
 		 }
 	    } 
         } 
         
-        for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+        for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	{
 		//============================ Wandering Phase =============================//
 		//=====Iteratively overwrites pseudorandom cells of the memory matrix=======//
@@ -508,14 +510,14 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             //row0  = off0 + (((uint64_t)threadState[0]) & (window-1));
             //rowP = offP + (((uint64_t)threadState[2]) & (window-1));
             /*(USE THIS FOR THE "GENERIC" CASE)*/
-            for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+            for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
 		    row0[threadNumber] = off0[threadNumber] + (((uint64_t)threadState[threadNumber][0]) % window[threadNumber]);    //row0 = off0 + (lsw(rand) mod window)
 		    rowP[threadNumber] = offP[threadNumber] + (((uint64_t)threadState[threadNumber][2]) % window[threadNumber]);    //row1 = offP + (lsw(rot(rand)) mod window)
 		    //we rotate 2 words for compatibility with the SSE implementation
 
                     //Selects a pseudorandom indices jP 
-                    jP[threadNumber] = ((uint64_t)threadState[threadNumber][4]) % nPARALLEL;                        //jP = lsw(rot^2(rand)) mod nPARALLEL
+                    jP[threadNumber] = ((uint64_t)threadState[threadNumber][4]) % nThreads;                        //jP = lsw(rot^2(rand)) mod nThreads
                                                                                 //we rotate 2 words for compatibility with the SSE implementation
 
                     //Performs a reduced-round duplexing operation over "Mi[row0][col] [+] Mj[rowP][col] [+] Mi[prev0][col0]", updating Mi[row0]
@@ -527,7 +529,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
                     prev0[threadNumber] = row0[threadNumber];
             }
             
-            for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+            for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
 		    if (wCont == sync[threadNumber]) {
 			uint64_t offTemp;     
@@ -539,7 +541,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 	    }
         }
 
-     for(threadNumber = 0; threadNumber<nPARALLEL;threadNumber++)
+     for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
      {
         
         //==========================================================================/
@@ -555,7 +557,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     }   // Parallelism End
 
     // XORs all Keys
-    for (i = 1; i < nPARALLEL; i++) {
+    for (i = 1; i < nThreads; i++) {
         for (j = 0; j < kLen; j++) {
             pKeys[0][j] ^= pKeys[i][j];
         }
@@ -566,4 +568,3 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     return 0;
 }
-#endif
