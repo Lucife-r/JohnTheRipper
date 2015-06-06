@@ -92,7 +92,7 @@ static struct parallel_salt *saved_salt;
 static char *output;
 static char *job;
 static char *saved_key;
-cl_kernel crypt_kernel_init,crypt_kernel_loop,crypt_kernel_finish,crypt_kernel_finish_loop;
+cl_kernel crypt_kernel_init,crypt_kernel_loop,crypt_kernel_finish_loop;
 uint64_t sequentialLoops;
 
 static int source_in_use;
@@ -109,7 +109,7 @@ static size_t get_task_max_work_group_size()
 	size_t s;
 	s=autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_init);
 	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_loop));
-	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_finish));
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel_finish_loop));
 	return s;
 }
 
@@ -242,18 +242,6 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		(void *)&cl_saved_salt), "Error setting argument 3");
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish_loop, 4, sizeof(cl_mem),
 		(void *)&cl_job), "Error setting argument 4");
-
-	//crypt_kernel_finish
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 0, sizeof(cl_mem),
-		(void *)&cl_saved_key), "Error setting argument 0");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 1, sizeof(cl_mem),
-		(void *)&cl_saved_idx), "Error setting argument 1");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 2, sizeof(cl_mem),
-		(void *)&cl_result), "Error setting argument 2");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 3, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 3");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel_finish, 4, sizeof(cl_mem),
-		(void *)&cl_job), "Error setting argument 4");
 }
 
 static void release_clobj(void)
@@ -330,12 +318,6 @@ static void init(struct fmt_main *self)
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel parallel_kernel_finish. Double-check kernel name?");
 
-	crypt_kernel_finish =
-	    clCreateKernel(program[gpu_id], "parallel_kernel_finish", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel parallel_kernel_finish. Double-check kernel name?");
-
-
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 3*5*128*1, split_events,
 	    warn, 4, self, create_clobj, release_clobj, BINARY_SIZE*3, 0);
@@ -356,7 +338,6 @@ static void done(void)
 	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_init), "Release kernel");
 	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_loop), "Release kernel");
 	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_finish_loop), "Release kernel");
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel_finish), "Release kernel");
 	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 }
 

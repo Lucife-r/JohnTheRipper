@@ -509,7 +509,7 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 
 #define SIMPLE(tmpJ,key) { \
 	for(k=0;k<8;k++) \
-		((unsigned char*)m_block)[k]=((unsigned char*) (tmpJ))[k];\
+		((unsigned char*)m_block)[k]=((unsigned char*) (tmpJ))[7-k];\
 \
 	for(k=0;k<(HASH_LENGTH);k++) \
 		((unsigned char*)m_block)[8+k]=((unsigned char*) (key))[k];\
@@ -521,7 +521,7 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 	m_block[15] = 576; \
 	sha512Block_Z(m_block, m_state);    \
 }
-//to do: why change 55 to 10, makes slower speed from 32k to 24 k?
+//why change 55 to 10, makes slower speed from 32k to 24 k?
 
 struct parallel_salt {
 	unsigned int s_loops;
@@ -640,13 +640,22 @@ __kernel void parallel_kernel_loop(__global const uchar * in,
 	for (j = 0; j < parallelLoops; j++)
 	{
 		// work ^= hash(WRITE_BIG_ENDIAN_64(j) || key)
-		tmpJ = SWAP_ENDIAN_64(j);
+		tmpJ = j;
 
 		SIMPLE(&tmpJ, key);
 		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
 		{
 			work[k] ^= SWAP_ENDIAN_64(m_state[k]);//to do: test on another GPUs
 		}
+/*
+		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
+		{
+			work[k] ^= m_state[k];//to do: test on another GPUs
+		}
+		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
+		{
+			work[k] = SWAP_ENDIAN_64(work[k]);//to do: test on another GPUs
+		}	*/	
 	}
 		
 	// Finish
@@ -712,54 +721,5 @@ __kernel void parallel_kernel_finish_loop(
 	for(i=0;i<HASH_LENGTH;i++)
 		out[i]=((unsigned char *) key)[i];
 
-}
-
-__kernel void parallel_kernel_finish(__global const uchar * in,
-    __global const uint * index,
-    __global unsigned char *out,
-    __global struct parallel_salt *salt,
-    __global unsigned char *job)
-{
-	
-	unsigned int outlen;
-
-	unsigned long  key [HASH_LENGTH / sizeof(unsigned long)];
-	unsigned long work [HASH_LENGTH / sizeof(unsigned long)];
-	unsigned long i;
-	unsigned int k;
-	uint gid;
-
-	unsigned int m_messageLengthLo;
-	unsigned long m_state[8];
-	unsigned long m_block[16];
-
-	unsigned int pos;
-	unsigned int left;
-	unsigned char* message;
-	unsigned long lengthLo;
-
-	unsigned int end,shift;
-
-	gid = get_global_id(0);
-	out += gid * BINARY_SIZE;
-	job += gid * BINARY_SIZE;
-
-	outlen=salt->hash_size;
-
-	//copying previously saved work
-	for(i=0;i<HASH_LENGTH;i++)
-		((unsigned char*)work)[i]=((__global unsigned char *) out)[i];
-	for(i=0;i<HASH_LENGTH;i++)
-		((unsigned char*)key )[i]=((__global unsigned char *) job)[i];
-
-	INIT
-	UPDATE1(work, HASH_LENGTH);
-	UPDATE2(key, HASH_LENGTH);
-	FINAL(key, HASH_LENGTH);
-	hash(key, HASH_LENGTH, key,outlen);
-
-	// Finish
-	for(i=0;i<outlen;i++)
-		out[i]=((unsigned char *) key)[i];
 }
 
