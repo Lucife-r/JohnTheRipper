@@ -56,8 +56,8 @@ john_register_one(&fmt_opencl_parallel);
 #include "memdbg.h"
 
 static const char *warn[] = {
-	"xfer salt1: ", ", xfer salt2: ", ", xfer keys: ", ", xfer idx: ",
-	", crypt: ", ", xfer: "
+	"xfer salt: ", ", xfer keys: ", ", xfer idx: ", ", init: ",
+	", loop: ", ", loop finish: ", ", xfer results: "
 };
 
 #define MIN(a, b)		(((a) > (b)) ? (b) : (a))
@@ -97,7 +97,7 @@ uint64_t sequentialLoops;
 
 static int source_in_use;
 
-static int split_events[] = { 2, -1, -1 };
+static int split_events[] = { 4, 5, -1 };
 
 static void *get_salt(char *ciphertext);
 static int crypt_all(int *pcount, struct db_salt *salt);
@@ -337,12 +337,12 @@ static void init(struct fmt_main *self)
 
 
 	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
+	opencl_init_auto_setup(SEED, 3*5*128*1, split_events,
 	    warn, 4, self, create_clobj, release_clobj, BINARY_SIZE*3, 0);
 	
 	//Auto tune execution from shared/included code.
 	self->methods.crypt_all = crypt_all_benchmark;
-	autotune_run(self, 1000, 0, 1000);
+	autotune_run(self, 3*5*128*1, 0, 1000);
 	self->methods.crypt_all = crypt_all;
 }
 
@@ -545,7 +545,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	if (idx_offset > 4 * (global_work_size + 1))
 		idx_offset = 0;
 
-	printf("crypt_all\n");
+	printf("crypt_all loops %zu\n", (size_t)sequentialLoops);
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
 		CL_FALSE, 0, sizeof(struct parallel_salt), saved_salt, 0, NULL,
 		multi_profilingEvent[0]), "Failed transferring salt");
@@ -568,30 +568,21 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
 
-	for(i=0;i<sequentialLoops-1;i++)
+	for(i=0;i<sequentialLoops;i++)
 	{
 		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
 			NULL, &global_work_size, lws, 0, NULL,
-			NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
 		
 		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_finish_loop, 1,
 			NULL, &global_work_size, lws, 0, NULL,
-			NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_finish_loop");
+			multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel crypt_kernel_finish_loop");
 	
 		HANDLE_CLERROR(clFinish(queue[gpu_id]),
 		              "Error running loop kernel");
 
 		opencl_process_event();
 	}
-
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
-		NULL, &global_work_size, lws, 0, NULL,
-		NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
-
-		
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_finish, 1,
-		NULL, &global_work_size, lws, 0, NULL,
-		NULL), "failed in clEnqueueNDRangeKernel crypt_kernel_finish");
 	
 	HANDLE_CLERROR(clFinish(queue[gpu_id]),
 		"Error running loop kernel");
@@ -601,13 +592,14 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[4]), "failed in reading data back");
+		multi_profilingEvent[6]), "failed in reading data back");
 	
 	return count;
 }
 
 static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
 {
+	uint64_t i;
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
 
@@ -619,8 +611,7 @@ static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
 	if (idx_offset > 4 * (global_work_size + 1))
 		idx_offset = 0;
 
-	printf("crypt_all_benchmark\n");
-
+	printf("crypt_all_bench loops %zu\n", (size_t)sequentialLoops);
 	BENCH_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
 		CL_FALSE, 0, sizeof(struct parallel_salt), saved_salt, 0, NULL,
 		multi_profilingEvent[0]), "Failed transferring salt");
@@ -638,18 +629,32 @@ static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[2]), "Failed transferring index");
 
 
-	BENCH_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
+	BENCH_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_init, 1,
 		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[2]), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
+		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
+
+	for(i=0;i<sequentialLoops;i++)
+	{
+		BENCH_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_loop, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel crypt_kernel_loop");
+
+		BENCH_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel_finish_loop, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel crypt_kernel_finish_loop");
+ 
+		BENCH_CLERROR(clFinish(queue[gpu_id]),
+		              "Error running loop kernel");
+
+		opencl_process_event();
+	}
 
 
-	// read back 
+	// read back
 	BENCH_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[4]), "failed in reading data back");
+		multi_profilingEvent[6]), "failed in reading data back");;
 
-
-	BENCH_CLERROR(clFinish(queue[gpu_id]), "Error running loop kernel");
 	
 	return count;
 }
