@@ -269,7 +269,46 @@ inline void reducedDuplexRowWandering(uint64_t *state, uint64_t *rowInOut0, uint
     uint64_t randomColumn1;              //In Lyra2: col1
     
     int i, j;
+    unsigned int nCols1=N_COLS-1;
 
+    if(nCols_is_2_power)
+    for (i = 0; i < N_COLS; i++) {
+        
+        //col0 = lsw(rot^2(rand)) mod N_COLS
+        //randomColumn0 = ((uint64_t)state[4] & (N_COLS-1))*BLOCK_LEN_INT64;            /*(USE THIS IF N_COLS IS A POWER OF 2)*/
+        randomColumn0 = ((uint64_t)state[4] & nCols1)*BLOCK_LEN_INT64;                  /*(USE THIS FOR THE "GENERIC" CASE)*/
+        ptrWordIn0 = rowIn0 + randomColumn0; 
+        
+        //col1 = lsw(rot^3(rand)) mod N_COLS
+        //randomColumn1 = ((uint64_t)state[6] & (N_COLS-1))*BLOCK_LEN_INT64;            /*(USE THIS IF N_COLS IS A POWER OF 2)*/
+        randomColumn1 = ((uint64_t)state[6] & nCols1)*BLOCK_LEN_INT64;                  /*(USE THIS FOR THE "GENERIC" CASE)*/
+        ptrWordIn1 = rowIn1 + randomColumn1; 
+        
+	//Absorbing "M[row0] [+] M[row1] [+] M[prev0] [+] M[prev1]"
+        for (j = 0; j < BLOCK_LEN_INT64; j++){ 
+            state[j] ^= (ptrWordInOut0[j]  + ptrWordInOut1[j]  + ptrWordIn0[j]  + ptrWordIn1[j]);
+        }
+
+	//Applies the reduced-round transformation f to the sponge's state
+        reducedSpongeLyra(state);
+
+	//M[rowInOut0][col] = M[rowInOut0][col] XOR rand
+        for (j = 0; j < BLOCK_LEN_INT64; j++){ 
+            ptrWordInOut0[j] ^= state[j];
+        }
+        
+        //M[rowInOut1][col] = M[rowInOut1][col] XOR rot(rand)
+        //rot(): right rotation by 'omega' bits (e.g., 1 or more words)
+        //we rotate 2 words for compatibility with the SSE implementation
+        for (j = 0; j < BLOCK_LEN_INT64; j++){
+            ptrWordInOut1[j]  ^= state[(j+2) % BLOCK_LEN_INT64];
+        }
+
+	//Goes to next column
+        ptrWordInOut0 += BLOCK_LEN_INT64;
+        ptrWordInOut1 += BLOCK_LEN_INT64; 
+    }
+    else
     for (i = 0; i < N_COLS; i++) {
         
         //col0 = lsw(rot^2(rand)) mod N_COLS
