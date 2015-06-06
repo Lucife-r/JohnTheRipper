@@ -598,7 +598,7 @@ static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
 		multi_profilingEvent[0]), "Failed transferring salt");
 
 	if (key_idx > key_offset)
-		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
+		BENCH_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
 			cl_saved_key, CL_FALSE, key_offset,
 			key_idx - key_offset, saved_key + key_offset, 0, NULL,
 			multi_profilingEvent[1]), "Failed transferring keys");

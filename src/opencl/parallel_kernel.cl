@@ -503,23 +503,16 @@ inline void hash(void *message, unsigned int length, void *out, unsigned int out
 	for(k=0;k<64;k++) 	\
 		((unsigned char*) m_block)[pos+k]=message[k]; \
 	sha512Block(m_block, m_state); \
-	message = message + 64; \
 	m_messageLengthLo += (LENGTH); \
 }
 
-#define SIMPLE(tmpJ,key) { \
-	for(k=0;k<8;k++) \
-		((unsigned char*)m_block)[k]=((unsigned char*) (tmpJ))[7-k];\
-\
-	for(k=0;k<(HASH_LENGTH);k++) \
-		((unsigned char*)m_block)[8+k]=((unsigned char*) (key))[k];\
-\
-	((unsigned char*) m_block)[72] = 0x80; \
-	for(i=0;i<55;i++) \
-		((unsigned char*) m_block)[73+i]=0; \
-\
-	m_block[15] = 576; \
-	sha512Block_Z(m_block, m_state);    \
+#define SIMPLE(j,key) { \
+       m_block[0]=SWAP_ENDIAN_64(j);\
+       for(k=0;k<(HASH_LENGTH/8);k++) \
+               m_block[1+k]=key[k];\
+       m_block[9]=0x80;\
+       m_block[15] = 576;\
+       sha512Block_Z(m_block, m_state);\
 }
 //why change 55 to 10, makes slower speed from 32k to 24 k?
 
@@ -639,24 +632,17 @@ __kernel void parallel_kernel_loop(__global const uchar * in,
 
 	for (j = 0; j < parallelLoops; j++)
 	{
-		// work ^= hash(WRITE_BIG_ENDIAN_64(j) || key)
-		tmpJ = j;
+		SIMPLE(j, key);
 
-		SIMPLE(&tmpJ, key);
-		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
-		{
-			work[k] ^= SWAP_ENDIAN_64(m_state[k]);//to do: test on another GPUs
-		}
-/*
 		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
 		{
 			work[k] ^= m_state[k];//to do: test on another GPUs
-		}
-		for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
-		{
-			work[k] = SWAP_ENDIAN_64(work[k]);//to do: test on another GPUs
-		}	*/	
+		}	
 	}
+	for (k = 0; k < HASH_LENGTH / sizeof(unsigned long); k++)
+	{
+		work[k] = SWAP_ENDIAN_64(work[k]);//to do: test on another GPUs
+	}	
 		
 	// Finish
 	// out = key
