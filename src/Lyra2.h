@@ -24,40 +24,22 @@
 
 typedef unsigned char byte ;
 
-
-#ifndef N_COLS
-        #define N_COLS 256                                      //Number of columns in the memory matrix: fixed to 256 by default
-#endif
-
-#ifndef nPARALLEL
-        #define nPARALLEL 2                                     //Number of parallel threads
-#endif
-
-#define ROW_LEN_INT64 (BLOCK_LEN_INT64 * N_COLS)                //Total length of a row: N_COLS blocks
-#define ROW_LEN_BYTES (ROW_LEN_INT64 * 8)                       //Number of bytes per row
+extern unsigned short N_COLS;
+extern int nCols_is_2_power;
 
 struct lyra2_allocation{
     uint64_t **memMatrix;
     unsigned char **pKeys;
-    uint64_t *threadSliceMatrix[nPARALLEL];
-    unsigned char *threadKey[nPARALLEL];
-    uint64_t *threadState[nPARALLEL];
+    uint64_t **threadSliceMatrix;
+    unsigned char **threadKey;
+    uint64_t **threadState;
 };
 
-#if (nPARALLEL == 1)
 
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols);
+int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, unsigned int nThreads, int threadNumber,struct lyra2_allocation *allocated);
 
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost);
+int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols, struct lyra2_allocation *allocated);
 
-#endif
-
-#if (nPARALLEL > 1)
-
-int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, const void *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nCols,int threadNumber,struct lyra2_allocation *allocated);
-
-int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost,int threadNumber,struct lyra2_allocation *allocated);
-
-#endif
+int LYRA2(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, unsigned int nThreads, int threadNumber,struct lyra2_allocation *allocated);
 
 #endif /* LYRA2_H_ */ 

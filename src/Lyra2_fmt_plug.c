@@ -49,15 +49,18 @@ john_register_one(&fmt_lyra2);
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static struct fmt_tests tests[] = {
-	{"$Lyra2$8$8$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
-	{"$Lyra2$8$8$salt2$e61b2fc5a76d234c49188c2d6c234f5b5721382b127bea0177287bf5f765ec1a","password"},
-	{"$Lyra2$8$8$salt$23ac37677486f032bf9960968318b53617354e406ac8afcd","password"},
-	{"$Lyra2$16$16$salt$f6ab1f65f93f2d491174f7f3c2a681fb95dadee998a014b90d78aae02bb099", "password"},
+	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
+	{"$Lyra2$8$8$256$2$salt2$e61b2fc5a76d234c49188c2d6c234f5b5721382b127bea0177287bf5f765ec1a","password"},
+	{"$Lyra2$1$12$256$3$salt$27a195d60ee962293622e2ee8c449102afe0e720e38cb0c4da948cfa1044250a","password"},
+	{"$Lyra2$8$8$256$2$salt$23ac37677486f032bf9960968318b53617354e406ac8afcd","password"},
+	{"$Lyra2$16$16$256$2$salt$f6ab1f65f93f2d491174f7f3c2a681fb95dadee998a014b90d78aae02bb099", "password"},
+	{"$Lyra2$1$8$256$1$one$4b84f7d57b1065f1bd21130152d9f46b71f4537b7f9f31710fac6b87e5f480cb","pass"},
 	{NULL}
 };
 
 struct lyra2_salt {
 	uint32_t t_cost,m_cost;
+	uint32_t nCols,nThreads;
 	uint32_t hash_size;
 	uint32_t salt_length;
 	char salt[SALT_SIZE];
@@ -66,17 +69,22 @@ struct lyra2_salt {
 static struct lyra2_salt saved_salt,prev_saved_salt;
 static char *saved_key;
 static unsigned char *crypted;
-static unsigned int threads;
+static unsigned int threads, max_threads;
 static int alloc;
 static struct lyra2_allocation *allocated;
 
+unsigned short N_COLS;
+int nCols_is_2_power;
+
+static void *get_salt(char *ciphertext);
+static void free_allocated();
+
 static void init(struct fmt_main *self)
 {
-	int omp_t = omp_get_max_threads();
-	threads=(omp_get_max_threads()/nPARALLEL)*nPARALLEL;
-	self->params.min_keys_per_crypt *= omp_t;
-	omp_t *= OMP_SCALE;
-	self->params.max_keys_per_crypt *= omp_t;
+	max_threads = omp_get_max_threads();
+
+	self->params.min_keys_per_crypt *= max_threads;
+	self->params.max_keys_per_crypt *= max_threads * OMP_SCALE;
 
 	saved_key =
 	    malloc(self->params.max_keys_per_crypt * (PLAINTEXT_LENGTH + 1));
@@ -90,6 +98,7 @@ static void init(struct fmt_main *self)
 
 static void done(void)
 {
+	free_allocated();
 	free(saved_key);
 	free(crypted);
 }
@@ -98,6 +107,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 {
 	char *next_dollar;
 	char *i;
+	struct lyra2_salt *salt;
 
 	if (strncmp(ciphertext, "$Lyra2$", 7) &&
 	    strncmp(ciphertext, "$lyra2$", 7))
@@ -113,6 +123,16 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	if (next_dollar == NULL || next_dollar - i > 4 || next_dollar == i)
 		return 0;
 	i = next_dollar + 1;
+	//nCols
+	next_dollar = strchr(i, '$');
+	if (next_dollar == NULL || next_dollar == i)
+		return 0;
+	i = next_dollar + 1;
+	//nThreads
+	next_dollar = strchr(i, '$');
+	if (next_dollar == NULL || next_dollar == i)
+		return 0;
+	i = next_dollar + 1;
 	//salt
 	next_dollar = strchr(i, '$');
 	if (next_dollar == NULL || next_dollar - i > SALT_SIZE || next_dollar == i)
@@ -120,10 +140,19 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	i = next_dollar + 1;
 	if (strlen(i) > CIPHERTEXT_LENGTH || strlen(i) == 0)
 		return 0;
-	while (atoi16[ARCH_INDEX(*i)] != 0x7F)
+	while (atoi16[ARCH_INDEX(*i)] != 0x7F)	
 		i++;
 	if (*i)
 		return 0;
+	
+	salt=get_salt(ciphertext);
+
+	if (salt->m_cost < 3) 
+		return 0;
+
+	if ((salt->m_cost / 2) % salt->nThreads != 0) 
+		return 0;
+    	
 	return 1;
 }
 
@@ -177,7 +206,7 @@ static void *get_salt(char *ciphertext)
 {
 	static struct lyra2_salt salt;
 	char *i = ciphertext + 7;
-	char *first_dollar,*second_dollar;
+	char *first_dollar,*second_dollar,*third_dollar,*fourth_dollar;
 	char *last_dollar = strrchr(ciphertext, '$');
 
 	memset(salt.salt, 0, sizeof(salt.salt));
@@ -186,12 +215,16 @@ static void *get_salt(char *ciphertext)
 
 	first_dollar = strchr(i, '$');
 	second_dollar = strchr(first_dollar + 1, '$');
+	third_dollar = strchr(second_dollar + 1, '$');
+	fourth_dollar = strchr(third_dollar + 1, '$');
 
-	salt.salt_length = last_dollar - second_dollar - 1;
+	salt.salt_length = last_dollar - fourth_dollar - 1;
 	salt.t_cost = atoi(i);
 	salt.m_cost = atoi(first_dollar+1);
+	salt.nCols = atoi(second_dollar+1);
+	salt.nThreads = atoi(third_dollar+1);
 
-	memcpy(salt.salt, second_dollar + 1, salt.salt_length);
+	memcpy(salt.salt, fourth_dollar + 1, salt.salt_length);
 
 	return (void *)&salt;
 }
@@ -208,7 +241,7 @@ static void free_allocated()
 	{
 		free(allocated[i].memMatrix); 
 		free(allocated[i].pKeys);
-		for(threadNumber=0;threadNumber<nPARALLEL;threadNumber++)
+		for(threadNumber=0;threadNumber<prev_saved_salt.nThreads;threadNumber++)
 		{
 			free(allocated[i].threadSliceMatrix[threadNumber]);
 			free(allocated[i].threadKey[threadNumber]);
@@ -218,6 +251,18 @@ static void free_allocated()
 	free(allocated);
 }
 
+static int is_power_of2(unsigned int x)
+{
+	int i=1;
+	while(i<=x)
+	{
+		if (i==x)
+			return 1;
+		i*=2;
+	}
+	return 0;
+}
+
 static void set_salt(void *salt)
 {
 	int i,threadNumber;
@@ -225,15 +270,20 @@ static void set_salt(void *salt)
 
 	prev_saved_salt=saved_salt;
 	memcpy(&saved_salt,salt,sizeof(struct lyra2_salt));
+	
+	N_COLS=saved_salt.nCols;
 
-	if(prev_saved_salt.m_cost==saved_salt.m_cost)
+	if(prev_saved_salt.m_cost==saved_salt.m_cost && prev_saved_salt.nThreads==saved_salt.nThreads)
 		return;
+
+	nCols_is_2_power=is_power_of2(N_COLS);
+	
+	threads=(max_threads/saved_salt.nThreads)*saved_salt.nThreads;
 
 	free_allocated();
 	allocated=malloc(threads*(sizeof(struct lyra2_allocation)));
 
-	
-	iP = (uint64_t) ((uint64_t) (saved_salt.m_cost/nPARALLEL) * (uint64_t) ROW_LEN_BYTES);
+	iP = (uint64_t) ((uint64_t) (saved_salt.m_cost/saved_salt.nThreads) * (uint64_t) (BLOCK_LEN_INT64 * saved_salt.nCols * 8));
 
 	for(i=0;i<threads;i++)
 	{
@@ -241,11 +291,16 @@ static void set_salt(void *salt)
     		if (allocated[i].memMatrix == NULL) {
 			exit(11);
 		}
-		allocated[i].pKeys = malloc(nPARALLEL * sizeof (unsigned char*));
+		allocated[i].pKeys = malloc(saved_salt.nThreads * sizeof (unsigned char*));
 		if (allocated[i].pKeys == NULL) {
         		exit(22);
 		}
-		for(threadNumber=0;threadNumber<nPARALLEL;threadNumber++)
+
+		allocated[i].threadSliceMatrix=malloc(sizeof(void *)*saved_salt.nThreads);
+		allocated[i].threadKey=malloc(sizeof(void *)*saved_salt.nThreads);
+		allocated[i].threadState=malloc(sizeof(void *)*saved_salt.nThreads);
+
+		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
 		{
 			allocated[i].threadSliceMatrix[threadNumber] = malloc(iP);
 			if (allocated[i].threadSliceMatrix[threadNumber] == NULL) {
@@ -292,21 +347,21 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	int i,remaining;
 	const int count = *pcount;
 
-	for(remaining=count*nPARALLEL;remaining>0;remaining-=threads)
+	for(remaining=count*saved_salt.nThreads;remaining>0;remaining-=threads)
 	{
 		omp_set_num_threads(MIN(remaining,threads));
 #pragma omp parallel for
 		for (i = 0; i < MIN(remaining,threads); i++) {
 			int thread = omp_get_thread_num();
-			int threadNumber = thread%nPARALLEL;
-			int hash_instance = thread/nPARALLEL;
+			int threadNumber = thread%saved_salt.nThreads;
+			int hash_instance = thread/saved_salt.nThreads;
 
 			LYRA2
 			    (crypted + hash_instance * BINARY_SIZE, saved_salt.hash_size,
 			    saved_key + hash_instance * (PLAINTEXT_LENGTH + 1),
 			    strlen(saved_key + hash_instance * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
 			    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost,
-		            threadNumber, &allocated[hash_instance]);
+		            saved_salt.nThreads, threadNumber, &allocated[hash_instance]);
 		}
 	}
 	return count;
