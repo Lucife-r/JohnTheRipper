@@ -22,7 +22,6 @@ john_register_one(&cuda_fmt_lyra2);
 #include "memdbg.h"
 #include "misc.h"
 #include "cuda_common.h"
-#include "cuda_Lyra2.h"
 
 #define FORMAT_LABEL			"Lyra2-cuda"
 #define FORMAT_NAME			"Generic Lyra2" //to do
@@ -65,12 +64,12 @@ struct lyra2_salt {
 	uint32_t nCols,nParallel;
 	uint32_t hash_size;
 	uint32_t salt_length;
-	char salt[SALT_SIZE];
+	unsigned char salt[SALT_SIZE];
 };
 
 static struct lyra2_salt saved_salt;
 
-static char *saved_key;
+static unsigned char *saved_key;
 
 static unsigned char *crypted;
 
@@ -81,7 +80,6 @@ static void *get_salt(char *ciphertext);
 
 static void init(struct fmt_main *self)
 {
-	printf("init\n");
 	saved_key =
 	    malloc(MAX_KEYS_PER_CRYPT * (PLAINTEXT_LENGTH + 1));
 	memset(saved_key, 0, MAX_KEYS_PER_CRYPT * (PLAINTEXT_LENGTH + 1));
@@ -154,8 +152,6 @@ static int valid(char *ciphertext, struct fmt_main *self)
 static void set_key(char *key, int index)
 {
 	int len;
-	if(index<5)
-	  printf("set key %d %s\n",index, key);
 	len = strlen(key);
 	if (len > PLAINTEXT_LENGTH)
 		len = PLAINTEXT_LENGTH;
@@ -165,7 +161,7 @@ static void set_key(char *key, int index)
 
 static char *get_key(int index)
 {
-	return saved_key + index * (PLAINTEXT_LENGTH + 1);
+	return (char*) (saved_key + index * (PLAINTEXT_LENGTH + 1));
 }
 
 static void char_to_bin(char *in, int char_length, char *bin)
@@ -241,7 +237,6 @@ static int is_power_of2(unsigned int x)
 
 static void set_salt(void *salt)
 {
-	//printf("set salt %s\n",salt);
 	memcpy(&saved_salt,salt,sizeof(struct lyra2_salt));
 	N_COLS=saved_salt.nCols;
 	nCols_is_2_power=is_power_of2(N_COLS);
@@ -249,21 +244,9 @@ static void set_salt(void *salt)
 
 static int cmp_all(void *binary, int count)
 {
-	int i,j;
+	int i;
 
 	for (i = 0; i < count; i++) {
-		/*printf("\n# ");
-		for(j=0;j<saved_salt.hash_size;j++)
-		{
-			printf("%x ",((int)((char *)binary)[j]) & 0xff);
-		}
-		printf("\n= ");
-		for(j=0;j<saved_salt.hash_size;j++)
-		{
-			printf("%x ",(int)crypted[ i * saved_salt.hash_size+j]);
-		}
-		printf("\n");*/
-
 		if (!memcmp(binary, crypted + i * saved_salt.hash_size, saved_salt.hash_size))
 			return 1;
 	}
@@ -284,13 +267,12 @@ static int cmp_exact(char *source, int index)
 static int crypt_all(int *pcount, struct db_salt *salt)
 {
 	const int count = *pcount;
-	printf("crypt all %d %d\n", count,saved_salt.nParallel);
-	//count*nPARALLEL=THREADS* BLOCKS
-	//multPasswordCUDA(saved_salt.t_cost, saved_salt.m_cost, count, THREADS, BLOCKS, 0);
-if(count*2>=THREADS)
-	multPasswordCUDA(crypted, saved_salt.hash_size, saved_key, PLAINTEXT_LENGTH+1, saved_salt.salt, saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, saved_salt.nParallel, saved_salt.nCols, count, saved_salt.nParallel*count/THREADS, THREADS);
-else
-	multPasswordCUDA(crypted, saved_salt.hash_size, saved_key, PLAINTEXT_LENGTH+1, saved_salt.salt, saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, saved_salt.nParallel, saved_salt.nCols, count, count, saved_salt.nParallel);
+	if(count*2>=THREADS)
+		multPasswordCUDA(crypted, saved_salt.hash_size, saved_key, PLAINTEXT_LENGTH+1, saved_salt.salt, saved_salt.salt_length, saved_salt.t_cost,
+		 saved_salt.m_cost, saved_salt.nParallel, saved_salt.nCols, count, saved_salt.nParallel*count/THREADS, THREADS);
+	else
+		multPasswordCUDA(crypted, saved_salt.hash_size, saved_key, PLAINTEXT_LENGTH+1, saved_salt.salt, saved_salt.salt_length, saved_salt.t_cost,
+		 saved_salt.m_cost, saved_salt.nParallel, saved_salt.nCols, count, count, saved_salt.nParallel);
 	return count;
 }
 
@@ -341,7 +323,7 @@ static int salt_hash(void *_salt)
 	int i;
 	struct lyra2_salt *salt = (struct lyra2_salt*)_salt;
 	unsigned int hash = 0;
-	char *p = salt->salt;
+	unsigned char *p = salt->salt;
 
 	for(i=0;i<salt->salt_length;i++) {
 		hash <<= 1;

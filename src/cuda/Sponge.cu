@@ -23,8 +23,8 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "attackLyra2.h"
-#include "attackSponge.h"
+#include "Lyra2.h"
+#include "Sponge.h"
 
 
 __device__ uint64_t sizeSlicedRows;
@@ -594,6 +594,7 @@ __device__ void absorbRandomColumn(uint64_t *in, uint64_t *state, uint64_t row0,
         sliceStart = threadNumber * sizeSlicedRows;
 
         uint64_t* ptrWordIn = (uint64_t*) & in[sliceStart + (row0 * ROW_LEN_INT64) + randomColumn0];
+
 
         //absorbs the column picked
         for (i = 0; i < BLOCK_LEN_INT64; i++) {

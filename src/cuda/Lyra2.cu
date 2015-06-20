@@ -27,8 +27,8 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include "attackLyra2.h"
-#include "attackSponge.h"
+#include "Lyra2.h"
+#include "Sponge.h"
 
 //#include <stdint.h> pomidor
 
@@ -53,9 +53,6 @@ __host__ void multPasswordCUDA(unsigned char *K, int kLen, unsigned char *passwo
         printf("Number of rows too small\n");
         exit(0);
     }
-
-    size_t sizeMemMatrix = (size_t) ((size_t) m_cost * (size_t) ROW_LEN_BYTES);
-
 
     //Calls the interface to the GPU program
     gpuMult(K, kLen, passwords, pwdLen, salt, saltLen, t_cost, m_cost, nPARALLEL, N_COLS, totalPasswords, gridSize, blockSize);
