@@ -126,7 +126,8 @@ CUDA_OBJS = common-cuda.o cuda_common.o cuda_cryptmd5.o cuda_phpass.o \
 	cuda_cryptsha256.o cuda_cryptsha512.o cuda_mscash2.o \
 	cuda_rawsha256.o cuda_rawsha224.o cuda_mscash.o \
 	cuda_xsha512.o cuda_wpapsk.o cuda_rawsha512.o cuda_pwsafe.o \
-	cuda_rawsha224_fmt.o cuda_rawsha256_fmt.o
+	cuda_rawsha224_fmt.o cuda_rawsha256_fmt.o \
+	cuda_Sponge.o cuda_Lyra2.o
 
 GENMKVPWD_OBJS = \
 	genmkvpwd.o mkvlib.o memory.o miscnl.o path.o memdbg.o
@@ -260,6 +261,12 @@ cuda_xsha512.o: cuda_xsha512.h cuda/xsha512.cu cuda_common.o
 
 cuda_wpapsk.o:  cuda_wpapsk.h cuda/wpapsk.cu cuda_common.o
 	cd cuda; $(NVCC) $(NVCC_FLAGS) wpapsk.cu -o ../cuda_wpapsk.o
+
+cuda_Lyra2.o: cuda_common.o cuda/Lyra2.cu cuda/Lyra2.h
+	cd cuda; $(NVCC) $(NVCC_FLAGS) Lyra2.cu -o ../cuda_Lyra2.o
+
+cuda_Sponge.o: cuda_common.o cuda/Sponge.cu cuda/Sponge.h
+	cd cuda; $(NVCC) $(NVCC_FLAGS) Sponge.cu -o ../cuda_Sponge.o
 
 cuda_rawsha512.o: cuda_rawsha512.h cuda/rawsha512.cu cuda_common.o
 	cd cuda; $(NVCC) $(NVCC_FLAGS) rawsha512.cu -o ../cuda_rawsha512.o
