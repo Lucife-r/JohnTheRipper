@@ -24,9 +24,8 @@ john_register_one(&cuda_fmt_lyra2);
 #include "cuda_common.h"
 
 #define FORMAT_LABEL			"Lyra2-cuda"
-#define FORMAT_NAME			"Generic Lyra2" //to do
-
-#define ALGORITHM_NAME			" "
+#define FORMAT_NAME			"Lyra2"
+#define ALGORITHM_NAME			"Lyra2 CUDA"
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		-1

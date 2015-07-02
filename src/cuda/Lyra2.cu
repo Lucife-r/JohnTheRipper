@@ -30,8 +30,6 @@
 #include "Lyra2.h"
 #include "Sponge.h"
 
-//#include <stdint.h> pomidor
-
 extern "C" void multPasswordCUDA(unsigned char *K, int kLen, unsigned char *passwords, int pwdLen, unsigned char *salt, int saltLen, unsigned int t_cost, unsigned int m_cost, unsigned int nPARALLEL, unsigned int C_COLS, unsigned int totalPasswords, unsigned int gridSize, unsigned int blockSize);
 
 

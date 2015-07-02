@@ -299,10 +299,10 @@ __global__ void absorbInput(uint64_t * memMatrixGPU, uint64_t * stateThreadGPU, 
 	}
 
 if (nPARALLEL == 1)
-        nBlocksInput = ((saltlen + 4 + 6 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+        nBlocksInput = ((saltlen + password_len + 6 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
 
 if (nPARALLEL > 1)
-        nBlocksInput = ((saltlen + 4 + 8 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+        nBlocksInput = ((saltlen + password_len + 8 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
 
 	//nBlocksInput=1;
         sliceStart = threadNumber*sizeSlicedRows;
@@ -1092,16 +1092,4 @@ __global__ void squeeze(uint64_t *state, byte *out, unsigned int len, unsigned i
         //Squeezes remaining bytes
         memcpy(ptr, &state[stateStart], (len % BLOCK_LEN_BYTES));
     }
-}
-
-/**
- Prints an array of unsigned chars
- */
-void printArray(unsigned char *array, unsigned int size, char *name) {
-    int i;
-    printf("%s: ", name);
-    for (i = 0; i < size; i++) {
-		printf("%2x|", array[i]);
-    }
-    printf("\n");
 }
