@@ -39,7 +39,7 @@ typedef unsigned char byte;
 #define BLOCK_LEN_BYTES (BLOCK_LEN_INT64 * 8)                           //Block length, in bytes
 
 #define STATESIZE_INT64 16
-#define STATESIZE_BYTES (16 * sizeof (uint64_t))
+#define STATESIZE_BYTES (16 * sizeof (unsigned long))
 
 #define RHO 1                                                   //Number of reduced rounds performe
 

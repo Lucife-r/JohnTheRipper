@@ -171,6 +171,15 @@ inline static void spongeLyra(__global ulong * v)
 	}
 }
 
+inline static void spongeLyra_priv(ulong * v)
+{
+	int i;
+
+	for (i = 0; i < 12; i++) {
+		ROUND_LYRA(i);
+	}
+}
+
 inline void absorbBlockBlake2Safe(__global ulong * state, __global ulong * in)
 {
 	//XORs the first BLOCK_LEN_BLAKE2_SAFE_INT64 words of "in" with the current state
@@ -231,6 +240,15 @@ __kernel void lyra2_absorbInput(__global ulong * memMatrixGPU,
 }
 
 inline static void reducedSpongeLyra(__global ulong * v)
+{
+	int i;
+
+	for (i = 0; i < RHO; i++) {
+		ROUND_LYRA(i);
+	}
+}
+
+inline static void reducedSpongeLyra_priv(ulong * v)
 {
 	int i;
 
@@ -344,7 +362,7 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 	}
 }
 
-void reducedDuplexRowFilling(__global ulong * state,
+void reducedDuplexRowFilling(ulong * state,
     __global ulong * memMatrixGPU, ulong prev0, ulong prevP, ulong row0,
     ulong rowP, ulong jP, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -353,12 +371,10 @@ void reducedDuplexRowFilling(__global ulong * state,
 
 	ulong sliceStart;
 	ulong sliceStartjP;
-	ulong stateStart;
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * sizeSlicedRows;	//sizeSlicedRows = (nRows/nPARALLEL) * ROW_LEN_INT64
 	//jP slice must be inside the  password´s thread pool
 	//The integer part of threadNumber/nPARALLEL multiplied by nPARALLEL is the Base Slice Start for the password thread pool
@@ -381,23 +397,23 @@ void reducedDuplexRowFilling(__global ulong * state,
 	for (i = 0; i < N_COLS; i++) {
 		//Absorbing "M[rowP] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^=
+			state[j] ^=
 			    (ptrWordInOut[j] + ptrWordIn0[j] + ptrWordIn1[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra_priv(state);
 
 		//M[row0][col] = M[prev0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn0[j] ^ state[stateStart + j];
+			ptrWordOut[j] = ptrWordIn0[j] ^ state[j];
 		}
 
 		//M[rowP][col] = M[rowP][col] XOR rot(rand)
 		//rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 		//we rotate 2 words for compatibility with the SSE implementation
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut[j] ^= state[stateStart + ((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+			ptrWordInOut[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
 		}
 
 		//Inputs: next column (i.e., next block in sequence)
@@ -410,12 +426,11 @@ void reducedDuplexRowFilling(__global ulong * state,
 }
 
 void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
-    __global ulong * state, ulong prev0, ulong row0, ulong rowP, ulong window,
+    ulong * state, ulong prev0, ulong row0, ulong rowP, ulong window,
     ulong jP, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
 	int threadNumber;
 	ulong sliceStart;
-	ulong stateStart;
 	ulong sliceStartjP;
 	ulong randomColumn0;	//In Lyra2: col0
 
@@ -423,7 +438,6 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	threadNumber = get_global_id(0);
 
 
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * sizeSlicedRows;
 
 	//jP slice must be inside the  password´s thread pool
@@ -443,8 +457,8 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 
 	for (i = 0; i < N_COLS; i++) {
 		//col0 = LSW(rot^3(rand)) mod N_COLS
-		//randomColumn0 = ((uint64_t)state[stateStart + 6] & (N_COLS-1))*BLOCK_LEN_INT64;           /*(USE THIS IF N_COLS IS A POWER OF 2)*/
-		randomColumn0 = ((ulong) state[stateStart + 6] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
+		//randomColumn0 = ((uint64_t)state[6] & (N_COLS-1))*BLOCK_LEN_INT64;           /*(USE THIS IF N_COLS IS A POWER OF 2)*/
+		randomColumn0 = ((ulong) state[6] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
 
 		ptrWordIn0 =
 		    (__global ulong *) & memMatrixGPU[sliceStart +
@@ -452,16 +466,16 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 
 		//Absorbing "M[row0] [+] M[prev0] [+] M[rowP]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^=
+			state[j] ^=
 			    (ptrWordInOut0[j] + ptrWordIn0[j] + ptrWordInP[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra_priv(state);
 
 		//M[rowInOut0][col] = M[rowInOut0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut0[j] ^= state[stateStart + j];
+			ptrWordInOut0[j] ^= state[j];
 		}
 
 		//Goes to next block
@@ -501,8 +515,35 @@ void absorbRandomColumn(__global ulong * in, __global ulong * state,
 	spongeLyra(&state[stateStart]);
 }
 
+void absorbRandomColumn_priv(__global ulong * in, ulong * state,
+    ulong row0, ulong randomColumn0, uint nPARALLEL, uint N_COLS,
+    ulong sizeSlicedRows)
+{
+	int i;
+	int threadNumber;
+	ulong sliceStart;
+
+	// Thread index:
+	threadNumber = get_global_id(0);
+
+	sliceStart = threadNumber * sizeSlicedRows;
+
+	__global ulong *ptrWordIn =
+	    (__global ulong *) & in[sliceStart + (row0 * ROW_LEN_INT64) +
+	    randomColumn0];
+
+
+	//absorbs the column picked
+	for (i = 0; i < BLOCK_LEN_INT64; i++) {
+		state[i] ^= ptrWordIn[i];
+	}
+
+	//Applies the full-round transformation f to the sponge's state
+	spongeLyra_priv(state);
+}
+
 void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU, uint timeCost, ulong sizeSlice,
+    ulong * stateThreadGPU, uint timeCost, ulong sizeSlice,
     ulong sqrt, ulong prev0, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
 	ulong wCont;		//Time Loop iterator
@@ -511,9 +552,7 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 
 	ulong rowP;		//rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
 	ulong jP;		//Index to another thread
-	ulong threadNumber;
 
-	ulong stateStart;
 
 	ulong off0;		//complementary offsets to calculate row0
 	ulong offP;		//complementary offsets to calculate rowP
@@ -524,9 +563,6 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 	ulong halfSlice = sizeSlice / 2;
 
 	// Thread index:
-	threadNumber = get_global_id(0);
-
-	stateStart = threadNumber * STATESIZE_INT64;
 
 	window = halfSlice;
 	off0 = 0;
@@ -539,13 +575,11 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 		//row0  = off0 + (((ulong)stateThreadGPU[stateStart + 0]) & (window-1));
 		//row0P = offP + (((ulong)stateThreadGPU[stateStart + 2]) & (window-1));
 		//(USE THIS FOR THE "GENERIC" CASE)
-		row0 =
-		    off0 + (((ulong) stateThreadGPU[stateStart + 0]) % window);
-		rowP =
-		    offP + (((ulong) stateThreadGPU[stateStart + 2]) % window);
+		row0 = off0 + (((ulong) stateThreadGPU[0]) % window);
+		rowP = offP + (((ulong) stateThreadGPU[2]) % window);
 
 		//Selects a pseudorandom indices j0 (LSW(rot^2 (rand)) mod p)
-		jP = ((ulong) stateThreadGPU[stateStart + 4]) % nPARALLEL;
+		jP = ((ulong) stateThreadGPU[4]) % nPARALLEL;
 
 		//Performs a reduced-round duplexing operation over M[row0] [+] Mj[rowP] [+] M[prev0], updating M[row0]
 		//M[row0][col] = M[row0][col] XOR rand;
@@ -570,13 +604,14 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 
 	//============================ Wrap-up Phase ===============================//
 	//Absorbs one last block of the memory matrix with the full-round sponge
-	absorbRandomColumn(memMatrixGPU, stateThreadGPU, row0, 0, nPARALLEL,
-	    N_COLS, sizeSlicedRows);
+	absorbRandomColumn_priv(memMatrixGPU, stateThreadGPU, row0, 0,
+	    nPARALLEL, N_COLS, sizeSlicedRows);
 }
 
 __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU, __global struct lyra2_salt *salt)
+    __global ulong * stateThreadGPU_, __global struct lyra2_salt *salt)
 {
+	unsigned int i;
 	ulong step = 1;		//Visitation step (used during Setup and Wandering phases)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
@@ -594,10 +629,16 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	uint N_COLS = salt->nCols;
 	uint sizeSlice = salt->m_cost / nPARALLEL;
 
+	ulong stateThreadGPU[STATESIZE_INT64];
+
 	int threadNumber;
 
 	// Thread index:
 	threadNumber = get_global_id(0);
+
+	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU[i] = stateThreadGPU_[i];
 
 	//jP must be in the thread pool of the same password
 	jP = threadNumber % nPARALLEL;
@@ -645,9 +686,12 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	wanderingPhaseGPU2(memMatrixGPU, stateThreadGPU, salt->t_cost,
 	    sizeSlice, sqrt, prev0, nPARALLEL, N_COLS, salt->sizeSlicedRows);
 
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU_[i] = stateThreadGPU[i];
+
 }
 
-void reducedDuplexRowFilling_P1(__global ulong * state,
+void reducedDuplexRowFilling_P1(ulong * state,
     __global ulong * memMatrixGPU, ulong prev0, ulong prev1, ulong row0,
     ulong row1, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -655,12 +699,10 @@ void reducedDuplexRowFilling_P1(__global ulong * state,
 	int threadNumber;
 
 	ulong sliceStart;
-	ulong stateStart;
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * sizeSlicedRows;	//sizeSlicedRows = (nRows/nPARALLEL) * ROW_LEN_INT64
 
 	//Row used only as input (rowIn0 or M[prev0])
@@ -678,23 +720,23 @@ void reducedDuplexRowFilling_P1(__global ulong * state,
 	for (i = 0; i < N_COLS; i++) {
 		//Absorbing "M[row1] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^=
+			state[j] ^=
 			    (ptrWordInOut[j] + ptrWordIn0[j] + ptrWordIn1[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra_priv(state);
 
 		//M[row0][col] = M[prev0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn0[j] ^ state[stateStart + j];
+			ptrWordOut[j] = ptrWordIn0[j] ^ state[j];
 		}
 
 		//M[row1][col] = M[row1][col] XOR rot(rand)
 		//rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 		//we rotate 2 words for compatibility with the SSE implementation
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut[j] ^= state[stateStart + ((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+			ptrWordInOut[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
 		}
 
 		//Inputs: next column (i.e., next block in sequence)
@@ -707,20 +749,17 @@ void reducedDuplexRowFilling_P1(__global ulong * state,
 }
 
 void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
-    __global ulong * state, ulong prev0, ulong row0, ulong row1, ulong prev1,
+    ulong * state, ulong prev0, ulong row0, ulong row1, ulong prev1,
     uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
 	int threadNumber;
 	ulong sliceStart;
-	ulong stateStart;
 	ulong randomColumn0;	//In Lyra2: col0
 	ulong randomColumn1;	//In Lyra2: col1
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * sizeSlicedRows;
 
 
@@ -734,39 +773,38 @@ void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
 	for (i = 0; i < N_COLS; i++) {
 		//col0 = lsw(rot^2(rand)) mod N_COLS
 		//randomColumn0 = ((uint64_t)state[stateStart + 4] & (N_COLS-1))*BLOCK_LEN_INT64;           /*(USE THIS IF N_COLS IS A POWER OF 2)*/
-		randomColumn0 = ((ulong) state[stateStart + 4] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
+		randomColumn0 = ((ulong) state[4] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
 		ptrWordIn0 =
 		    (__global ulong *) & memMatrixGPU[sliceStart +
 		    (prev0 * ROW_LEN_INT64) + randomColumn0];
 
 		//col0 = LSW(rot^3(rand)) mod N_COLS
 		//randomColumn1 = ((uint64_t)state[stateStart + 6] & (N_COLS-1))*BLOCK_LEN_INT64;           /*(USE THIS IF N_COLS IS A POWER OF 2)*/
-		randomColumn1 = ((ulong) state[stateStart + 6] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
+		randomColumn1 = ((ulong) state[6] % N_COLS) * BLOCK_LEN_INT64;	/*(USE THIS FOR THE "GENERIC" CASE) */
 		ptrWordIn1 =
 		    (__global ulong *) & memMatrixGPU[sliceStart +
 		    (prev1 * ROW_LEN_INT64) + randomColumn1];
 
 		//Absorbing "M[row0] [+] M[row1] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^=
+			state[j] ^=
 			    (ptrWordInOut0[j] + ptrWordInOut1[j] +
 			    ptrWordIn0[j] + ptrWordIn1[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra_priv(state);
 
 		//M[rowInOut0][col] = M[rowInOut0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut0[j] ^= state[stateStart + j];
+			ptrWordInOut0[j] ^= state[j];
 		}
 
 		//M[rowInOut1][col] = M[rowInOut1][col] XOR rot(rand)
 		//rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 		//we rotate 2 words for compatibility with the SSE implementation
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut1[j] ^=
-			    state[stateStart + ((j + 2) % BLOCK_LEN_INT64)];
+			ptrWordInOut1[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];
 		}
 
 		//Goes to next block
@@ -777,22 +815,12 @@ void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
 }
 
 void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU, uint timeCost, ulong nRows, ulong prev0,
+    ulong * stateThreadGPU, uint timeCost, ulong nRows, ulong prev0,
     ulong prev1, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
 	ulong wCont;		//Time Loop iterator
 	ulong row0;		//row0: sequentially written during Setup; randomly picked during Wandering
 	ulong row1;		//rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
-	ulong threadNumber;
-
-	ulong stateStart;
-
-
-	// Thread index:
-	threadNumber = get_global_id(0);
-
-
-	stateStart = threadNumber * STATESIZE_INT64;
 
 	for (wCont = 0; wCont < timeCost * nRows; wCont++) {
 		//Selects a pseudorandom indices row0 and rowP (row0 = LSW(rand) mod wnd and rowP = LSW(rot(rand)) mod wnd)
@@ -801,8 +829,8 @@ void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
 		//row0 = (((uint64_t)stateThreadGPU[stateStart + 0]) & nRows);
 		//row1 = (((uint64_t)stateThreadGPU[stateStart + 2]) & nRows);
 		//(USE THIS FOR THE "GENERIC" CASE)
-		row0 = (((ulong) stateThreadGPU[stateStart + 0]) % nRows);	//row0 = lsw(rand) mod nRows
-		row1 = (((ulong) stateThreadGPU[stateStart + 2]) % nRows);	//row1 = lsw(rot(rand)) mod nRows
+		row0 = (((ulong) stateThreadGPU[0]) % nRows);	//row0 = lsw(rand) mod nRows
+		row1 = (((ulong) stateThreadGPU[2]) % nRows);	//row1 = lsw(rot(rand)) mod nRows
 		//we rotate 2 words for compatibility with the SSE implementation
 
 		//Performs a reduced-round duplexing operation over "M[row0][col] [+] M[row1][col] [+] M[prev0][col0] [+] M[prev1][col1], updating both M[row0] and M[row1]
@@ -820,14 +848,15 @@ void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
 
 	//============================ Wrap-up Phase ===============================//
 	//Absorbs one last block of the memory matrix with the full-round sponge
-	absorbRandomColumn(memMatrixGPU, stateThreadGPU, row0, 0,
+	absorbRandomColumn_priv(memMatrixGPU, stateThreadGPU, row0, 0,
 	    nPARALLEL, N_COLS, sizeSlicedRows);
 
 }
 
 __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU, __global struct lyra2_salt *salt)
+    __global ulong * stateThreadGPU_, __global struct lyra2_salt *salt)
 {
+	unsigned int i;
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
 	ulong step = 1;		//Visitation step (used during Setup to dictate the sequence in which rows are read)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
@@ -839,12 +868,17 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	ulong row1 = 1;		//row1: revisited during Setup, and then read [and written]; randomly picked during Wandering
 	ulong prev1 = 0;	//prev1: stores the previous value of row1
 
+	ulong stateThreadGPU[STATESIZE_INT64];
+
 	// Thread index:
 	int threadNumber = get_global_id(0);
 	uint nPARALLEL = salt->nParallel;
 	uint N_COLS = salt->nCols;
 	uint sizeSlice = salt->m_cost / nPARALLEL;
 
+	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU[i] = stateThreadGPU_[i];
 
 	//Filling Loop
 	for (row0 = 3; row0 < sizeSlice; row0++) {
@@ -878,6 +912,9 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	//=====Iteratively overwrites pseudorandom cells of the memory matrix=======//
 	wanderingPhaseGPU2_P1(memMatrixGPU, stateThreadGPU, salt->t_cost,
 	    sizeSlice, prev0, prev1, nPARALLEL, N_COLS, salt->sizeSlicedRows);
+
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU_[i] = stateThreadGPU[i];
 }
 
 
