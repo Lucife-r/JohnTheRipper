@@ -54,10 +54,93 @@ void lyra2_initState(__global ulong * state)
 	state[start + 15] = blake2b_IV_7;
 }
 
+/**
+ * Execute G function, with all 12 rounds for Blake2 and  BlaMka, and 24 round for half-round BlaMka.
+ *
+ * @param v     A 1024-bit (16 uint64_t) array to be processed by Blake2b's or BlaMka's G function
+ */
 
-__kernel void lyra2_bootStrapGPU(__global ulong * memMatrixGPU,
+inline static void spongeLyra(ulong * v)
+{
+	int i;
+
+	for (i = 0; i < 12; i++) {
+		ROUND_LYRA(i);
+	}
+}
+
+inline void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
+{
+	//XORs the first BLOCK_LEN_BLAKE2_SAFE_INT64 words of "in" with the current state
+	state[0] ^= in[0];
+	state[1] ^= in[1];
+	state[2] ^= in[2];
+	state[3] ^= in[3];
+	state[4] ^= in[4];
+	state[5] ^= in[5];
+	state[6] ^= in[6];
+	state[7] ^= in[7];
+
+	//Applies the transformation f to the sponge's state
+	spongeLyra(state);
+}
+
+void lyra2_absorbInput(__global ulong * memMatrixGPU,
+    __global ulong * stateThreadGPU_, __global ulong * stateIdxGPU,
+    __global const uint * index, __global struct lyra2_salt *salt)
+{
+	int i;
+	__global ulong *ptrWord;
+	uint threadNumber = get_global_id(0);
+	ulong kP;
+	ulong sliceStart;
+
+	uint inlen, saltlen;
+	uint nPARALLEL = salt->nParallel;
+	uint thStart = (threadNumber / nPARALLEL);
+
+	inlen = index[thStart + 1] - index[thStart];
+	saltlen = salt->salt_length;
+
+	ulong nBlocksInput;
+
+	ulong stateThreadGPU[STATESIZE_INT64];
+
+	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
+
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU[i] = stateThreadGPU_[i];
+
+	if (nPARALLEL == 1)
+		nBlocksInput =
+		    ((saltlen + inlen +
+			6 * sizeof(int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+
+	if (nPARALLEL > 1)
+		nBlocksInput =
+		    ((saltlen + inlen +
+			8 * sizeof(int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
+
+	sliceStart = threadNumber * salt->sizeSlicedRows;
+
+	//Absorbing salt, password and params: this is the only place in which the block length is hard-coded to 512 bits, for compatibility with Blake2b and BlaMka
+	ptrWord = (__global ulong *) & memMatrixGPU[sliceStart];	//threadSliceMatrix;
+
+	for (kP = 0; kP < nBlocksInput; kP++) {
+		absorbBlockBlake2Safe(stateThreadGPU, ptrWord);	//absorbs each block of pad(pwd || salt || params)
+		ptrWord += BLOCK_LEN_BLAKE2_SAFE_INT64;	//BLOCK_LEN_BLAKE2_SAFE_INT64;  //goes to next block of pad(pwd || salt || params)
+	}
+
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU_[i] = stateThreadGPU[i];
+}
+
+
+
+__kernel void lyra2_bootStrapAndAbsorb(__global ulong * memMatrixGPU,
     __global unsigned char *pkeysGPU, __global unsigned char *pwdGPU,
-    __global const uint * index, __global struct lyra2_salt *salt, __global ulong * state)
+    __global const uint * index, __global struct lyra2_salt *salt,
+    __global ulong * state, __global ulong * stateIdxGPU)
 {
 	int i, mi;
 
@@ -156,98 +239,9 @@ __kernel void lyra2_bootStrapGPU(__global ulong * memMatrixGPU,
 	ptrByte += nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES - 1;	//sets the pointer to the correct position: end of incomplete block
 	*ptrByte ^= 0x01;	//last byte of padding: at the end of the last incomplete block
 
-	//.....
 	lyra2_initState(state);
-}
 
-
-/**
- * Execute G function, with all 12 rounds for Blake2 and  BlaMka, and 24 round for half-round BlaMka.
- *
- * @param v     A 1024-bit (16 uint64_t) array to be processed by Blake2b's or BlaMka's G function
- */
-inline static void spongeLyra(__global ulong * v)
-{
-	int i;
-
-	for (i = 0; i < 12; i++) {
-		ROUND_LYRA(i);
-	}
-}
-
-inline static void spongeLyra_priv(ulong * v)
-{
-	int i;
-
-	for (i = 0; i < 12; i++) {
-		ROUND_LYRA(i);
-	}
-}
-
-inline void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
-{
-	//XORs the first BLOCK_LEN_BLAKE2_SAFE_INT64 words of "in" with the current state
-	state[0] ^= in[0];
-	state[1] ^= in[1];
-	state[2] ^= in[2];
-	state[3] ^= in[3];
-	state[4] ^= in[4];
-	state[5] ^= in[5];
-	state[6] ^= in[6];
-	state[7] ^= in[7];
-
-	//Applies the transformation f to the sponge's state
-	spongeLyra_priv(state);
-}
-
-__kernel void lyra2_absorbInput(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU_, __global ulong * stateIdxGPU,
-    __global const uint * index, __global struct lyra2_salt *salt)
-{
-	int i;
-	__global ulong *ptrWord;
-	uint threadNumber = get_global_id(0);
-	ulong kP;
-	ulong sliceStart;
-
-	uint inlen, saltlen;
-	uint nPARALLEL = salt->nParallel;
-	uint thStart = (threadNumber / nPARALLEL);
-
-	inlen = index[thStart + 1] - index[thStart];
-	saltlen = salt->salt_length;
-
-	ulong nBlocksInput;
-
-	ulong stateThreadGPU[STATESIZE_INT64];
-
-	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
-
-	for (i = 0; i < STATESIZE_INT64; i++)
-		stateThreadGPU[i] = stateThreadGPU_[i];
-
-	if (nPARALLEL == 1)
-		nBlocksInput =
-		    ((saltlen + inlen +
-			6 * sizeof(int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
-
-	if (nPARALLEL > 1)
-		nBlocksInput =
-		    ((saltlen + inlen +
-			8 * sizeof(int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
-
-	sliceStart = threadNumber * salt->sizeSlicedRows;
-
-	//Absorbing salt, password and params: this is the only place in which the block length is hard-coded to 512 bits, for compatibility with Blake2b and BlaMka
-	ptrWord = (__global ulong *) & memMatrixGPU[sliceStart];	//threadSliceMatrix;
-
-	for (kP = 0; kP < nBlocksInput; kP++) {
-		absorbBlockBlake2Safe(stateThreadGPU, ptrWord);	//absorbs each block of pad(pwd || salt || params)
-		ptrWord += BLOCK_LEN_BLAKE2_SAFE_INT64;	//BLOCK_LEN_BLAKE2_SAFE_INT64;  //goes to next block of pad(pwd || salt || params)
-	}
-
-	for (i = 0; i < STATESIZE_INT64; i++)
-		stateThreadGPU_[i] = stateThreadGPU[i];
+	lyra2_absorbInput(memMatrixGPU, state, stateIdxGPU, index, salt);
 }
 
 
@@ -321,7 +315,9 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 	//Row to feed the sponge
 	__global ulong *ptrWordIn = (__global ulong *) & rowIn[sliceStart + 0 * ROW_LEN_INT64];	//In Lyra2: pointer to prev
 	//Row to receive the sponge's output
-	__global ulong *ptrWordOut = (__global ulong *) & rowIn[sliceStart + 1 * ROW_LEN_INT64 + (N_COLS - 1) * BLOCK_LEN_INT64];
+	__global ulong *ptrWordOut =
+	    (__global ulong *) & rowIn[sliceStart + 1 * ROW_LEN_INT64 +
+	    (N_COLS - 1) * BLOCK_LEN_INT64];
 	//In Lyra2: pointer to row
 	state_ += threadNumber * STATESIZE_INT64;
 
@@ -389,7 +385,7 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			ptrWordOut_copy[j] = ptrWordIn_copy[j] ^ state[j];
 		}
-	
+
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			ptrWordOut[j] = ptrWordOut_copy[j];
 		}
@@ -458,11 +454,12 @@ void reducedDuplexRowFilling(ulong * state,
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			ptrWordIn1_copy[j] = ptrWordIn1[j];
 		}
-		
+
 		//Absorbing "M[rowP] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] + ptrWordIn1_copy[j]);
+			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] +
+			    ptrWordIn1_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
@@ -526,10 +523,6 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	__global ulong *ptrWordIn0;	//In Lyra2: pointer to prev0
 
 	int i, j;
-#ifdef USE_VECTORS
-	ulong8 l1,l2,l3,l4;
-	ulong4 ll1,ll2,ll3,ll4; //pomidor
-#endif
 
 	ulong ptrWordInOut0_copy[BLOCK_LEN_INT64];
 	ulong ptrWordIn0_copy[BLOCK_LEN_INT64];
@@ -546,22 +539,23 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 		    (prev0 * ROW_LEN_INT64) + randomColumn0];
 
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut0_copy[j]=ptrWordInOut0[j];
+			ptrWordInOut0_copy[j] = ptrWordInOut0[j];
 		}
 
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordIn0_copy[j]=ptrWordIn0[j];
+			ptrWordIn0_copy[j] = ptrWordIn0[j];
 		}
 
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInP_copy[j]=ptrWordInP[j];
+			ptrWordInP_copy[j] = ptrWordInP[j];
 		}
 
 
 		//Absorbing "M[row0] [+] M[prev0] [+] M[rowP]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut0_copy[j] + ptrWordIn0_copy[j] + ptrWordInP_copy[j]);
+			    (ptrWordInOut0_copy[j] + ptrWordIn0_copy[j] +
+			    ptrWordInP_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
@@ -573,7 +567,7 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 		}
 
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut0[j]=ptrWordInOut0_copy[j];
+			ptrWordInOut0[j] = ptrWordInOut0_copy[j];
 		}
 
 		//Goes to next block
@@ -600,7 +594,7 @@ void absorbRandomColumn(__global ulong * in, ulong * state,
 	    (__global ulong *) & in[sliceStart + (row0 * ROW_LEN_INT64) +
 	    randomColumn0];
 
-	ulong  ptrWordIn_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn_copy[BLOCK_LEN_INT64];
 
 	for (i = 0; i < BLOCK_LEN_INT64; i++) {
 		ptrWordIn_copy[i] = ptrWordIn[i];
@@ -612,7 +606,7 @@ void absorbRandomColumn(__global ulong * in, ulong * state,
 	}
 
 	//Applies the full-round transformation f to the sponge's state
-	spongeLyra_priv(state);
+	spongeLyra(state);
 }
 
 void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
@@ -680,9 +674,10 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 }
 
 __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU_, __global struct lyra2_salt *salt)
+    __global ulong * stateThreadGPU_, __global byte * out,
+    __global struct lyra2_salt *salt)
 {
-	unsigned int i;
+	unsigned int i, mi;
 	ulong step = 1;		//Visitation step (used during Setup and Wandering phases)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
@@ -696,16 +691,20 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	ulong sqrt = 2;		//Square of window (i.e., square(window)), when a window is a square number;
 	//otherwise, sqrt = 2*square(window/2)
 
+
+	// Thread index:
+	int threadNumber = get_global_id(0);
+
+	uint len = salt->hash_size;
+	int fullBlocks = len / BLOCK_LEN_BYTES;
+
 	uint nPARALLEL = salt->nParallel;
 	uint N_COLS = salt->nCols;
 	uint sizeSlice = salt->m_cost / nPARALLEL;
+	__global byte *ptr = (__global byte *) & out[threadNumber * len];
 
 	ulong stateThreadGPU[STATESIZE_INT64];
 
-	int threadNumber;
-
-	// Thread index:
-	threadNumber = get_global_id(0);
 
 	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
 	for (i = 0; i < STATESIZE_INT64; i++)
@@ -754,9 +753,15 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	wanderingPhaseGPU2(memMatrixGPU, stateThreadGPU, salt->t_cost,
 	    sizeSlice, sqrt, prev0, nPARALLEL, N_COLS, salt->sizeSlicedRows);
 
-	for (i = 0; i < STATESIZE_INT64; i++)
-		stateThreadGPU_[i] = stateThreadGPU[i];
+	//Squeezes full blocks
+	for (i = 0; i < fullBlocks; i++) {
+		glmemcpy(ptr, stateThreadGPU, BLOCK_LEN_BYTES);
+		spongeLyra(stateThreadGPU);
+		ptr += BLOCK_LEN_BYTES;
+	}
 
+	//Squeezes remaining bytes
+	glmemcpy(ptr, stateThreadGPU, len % BLOCK_LEN_BYTES);
 }
 
 void reducedDuplexRowFilling_P1(ulong * state,
@@ -810,7 +815,8 @@ void reducedDuplexRowFilling_P1(ulong * state,
 		//Absorbing "M[row1] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] + ptrWordIn1_copy[j]);
+			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] +
+			    ptrWordIn1_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
@@ -951,9 +957,10 @@ void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
 }
 
 __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU_, __global struct lyra2_salt *salt)
+    __global ulong * stateThreadGPU_, __global byte * out,
+    __global struct lyra2_salt *salt)
 {
-	unsigned int i;
+	unsigned int i, mi;
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
 	ulong step = 1;		//Visitation step (used during Setup to dictate the sequence in which rows are read)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
@@ -964,6 +971,8 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	ulong prev0 = 2;	//prev0: stores the previous value of row0
 	ulong row1 = 1;		//row1: revisited during Setup, and then read [and written]; randomly picked during Wandering
 	ulong prev1 = 0;	//prev1: stores the previous value of row1
+	uint len = salt->hash_size;
+	int fullBlocks = len / BLOCK_LEN_BYTES;
 
 	ulong stateThreadGPU[STATESIZE_INT64];
 
@@ -972,6 +981,7 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	uint nPARALLEL = salt->nParallel;
 	uint N_COLS = salt->nCols;
 	uint sizeSlice = salt->m_cost / nPARALLEL;
+	__global byte *ptr = (__global byte *) & out[threadNumber * len];
 
 	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
 	for (i = 0; i < STATESIZE_INT64; i++)
@@ -1010,36 +1020,14 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	wanderingPhaseGPU2_P1(memMatrixGPU, stateThreadGPU, salt->t_cost,
 	    sizeSlice, prev0, prev1, nPARALLEL, N_COLS, salt->sizeSlicedRows);
 
-	for (i = 0; i < STATESIZE_INT64; i++)
-		stateThreadGPU_[i] = stateThreadGPU[i];
-}
-
-
-__kernel void lyra2_squeeze(__global ulong * state, __global byte * out,
-    __global struct lyra2_salt *salt)
-{
-	int i, mi;
-	int len = salt->hash_size;
-	int fullBlocks = len / BLOCK_LEN_BYTES;
-
-	uint threadNumber;
-	ulong stateStart;
-
-	// Thread index:
-	threadNumber = get_global_id(0);
-
-
-	stateStart = threadNumber * STATESIZE_INT64;
-
-	__global byte *ptr = (__global byte *) & out[threadNumber * len];
 
 	//Squeezes full blocks
 	for (i = 0; i < fullBlocks; i++) {
-		memcpy(ptr, &state[stateStart], BLOCK_LEN_BYTES);
-		spongeLyra(&state[stateStart]);
+		glmemcpy(ptr, stateThreadGPU, BLOCK_LEN_BYTES);
+		spongeLyra(stateThreadGPU);
 		ptr += BLOCK_LEN_BYTES;
 	}
 
 	//Squeezes remaining bytes
-	memcpy(ptr, &state[stateStart], len % BLOCK_LEN_BYTES);
+	glmemcpy(ptr, stateThreadGPU, len % BLOCK_LEN_BYTES);
 }

@@ -88,7 +88,7 @@ static struct lyra2_salt *saved_salt;
 static char *saved_key;
 static char *pKeysGPU;
 static int clobj_allocated;
-cl_kernel bootStrapGPU, absorbInput_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow_kernel, setupPhaseWanderingGPU_kernel, setupPhaseWanderingGPU_P1_kernel, squeeze_kernel;
+cl_kernel bootStrapAndAbsorb_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow_kernel, setupPhaseWanderingGPU_kernel, setupPhaseWanderingGPU_P1_kernel;
 
 
 static struct fmt_main *self;
@@ -220,30 +220,21 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 
 
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 0, sizeof(cl_mem),
-		(void *)&cl_memMatrixGPU), "Error setting argument 0 in bootStrapGPU");
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 1, sizeof(cl_mem),
-		(void *)&cl_pKeysGPU), "Error setting argument 1 in bootStrapGPU");
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 2, sizeof(cl_mem),
-		(void *)&cl_saved_key), "Error setting argument 2 in bootStrapGPU");
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 3, sizeof(cl_mem),
-		(void *)&cl_saved_idx), "Error setting argument 3 in bootStrapGPU");
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 4, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 4 in bootStrapGPU");
-	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 5, sizeof(cl_mem),
-		(void *)&cl_stateThreadGPU), "Error setting argument 5 in bootStrapGPU");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 0, sizeof(cl_mem),
+		(void *)&cl_memMatrixGPU), "Error setting argument 0 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 1, sizeof(cl_mem),
+		(void *)&cl_pKeysGPU), "Error setting argument 1 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 2, sizeof(cl_mem),
+		(void *)&cl_saved_key), "Error setting argument 2 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 3, sizeof(cl_mem),
+		(void *)&cl_saved_idx), "Error setting argument 3 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 4, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 4 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 5, sizeof(cl_mem),
+		(void *)&cl_stateThreadGPU), "Error setting argument 5 in bootStrapAndAbsorb_kernel");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapAndAbsorb_kernel, 6, sizeof(cl_mem),
+		(void *)&cl_stateIdxGPU), "Error setting argument 6 in bootStrapAndAbsorb_kernel");
 
-
-	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 0, sizeof(cl_mem),
-		(void *)&cl_memMatrixGPU), "Error setting argument 0 in absorbInput_kernel");
-	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 1, sizeof(cl_mem),
-		(void *)&cl_stateThreadGPU), "Error setting argument 1 in absorbInput_kernel");
-	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_stateIdxGPU), "Error setting argument 2 in absorbInput_kernel");
-	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 3, sizeof(cl_mem),
-		(void *)&cl_saved_idx), "Error setting argument 3 in absorbInput_kernel");
-	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 4, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 4 in absorbInput_kernel");
 
 	HANDLE_CLERROR(clSetKernelArg(reducedSqueezeRow0_kernel, 0, sizeof(cl_mem),
 		(void *)&cl_memMatrixGPU), "Error setting argument 0 in reducedSqueezeRow0_kernel");
@@ -264,22 +255,19 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_kernel, 1, sizeof(cl_mem),
 		(void *)&cl_stateThreadGPU), "Error setting argument 1 in setupPhaseWanderingGPU_kernel");
 	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 2 in setupPhaseWanderingGPU_kernel");
+		(void *)&cl_pKeysGPU), "Error setting argument 2 in setupPhaseWanderingGPU_P1_kernel");
+	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_kernel, 3, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 3 in setupPhaseWanderingGPU_kernel");
 
 	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_P1_kernel, 0, sizeof(cl_mem),
 		(void *)&cl_memMatrixGPU), "Error setting argument 0 in setupPhaseWanderingGPU_P1_kernel");
 	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_P1_kernel, 1, sizeof(cl_mem),
 		(void *)&cl_stateThreadGPU), "Error setting argument 1 in setupPhaseWanderingGPU_P1_kernel");
 	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_P1_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 2 in setupPhaseWanderingGPU_P1_kernel");
+		(void *)&cl_pKeysGPU), "Error setting argument 2 in setupPhaseWanderingGPU_P1_kernel");
+	HANDLE_CLERROR(clSetKernelArg(setupPhaseWanderingGPU_P1_kernel, 3, sizeof(cl_mem),
+		(void *)&cl_saved_salt), "Error setting argument 3 in setupPhaseWanderingGPU_P1_kernel");
 
-	
-	HANDLE_CLERROR(clSetKernelArg(squeeze_kernel, 0, sizeof(cl_mem),
-		(void *)&cl_stateThreadGPU), "Error setting argument 0 in squeeze_kernel");
-	HANDLE_CLERROR(clSetKernelArg(squeeze_kernel, 1, sizeof(cl_mem),
-		(void *)&cl_pKeysGPU), "Error setting argument 1 in squeeze_kernel");
-	HANDLE_CLERROR(clSetKernelArg(squeeze_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 2 in squeeze_kernel");
 }
 
 static void release_clobj(void)
@@ -327,13 +315,11 @@ static void done(void)
 {
 	release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(bootStrapGPU), "Release bootStrapGPU");
-	HANDLE_CLERROR(clReleaseKernel(absorbInput_kernel), "Release absorbInput_kernel");
+	HANDLE_CLERROR(clReleaseKernel(bootStrapAndAbsorb_kernel), "Release bootStrapAndAbsorb_kernel");
 	HANDLE_CLERROR(clReleaseKernel(reducedSqueezeRow0_kernel), "Release reducedSqueezeRow0_kernel");
 	HANDLE_CLERROR(clReleaseKernel(reducedDuplexRow_kernel), "Release reducedDuplexRow_kernel");
 	HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_kernel), "Release setupPhaseWanderingGPU_kernel");
 	HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_P1_kernel), "Release setupPhaseWanderingGPU_kernel");
-	HANDLE_CLERROR(clReleaseKernel(squeeze_kernel), "Release squeeze_kernel");
 	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 }
 
@@ -348,16 +334,11 @@ static void reset_()
 	opencl_init("$JOHN/kernels/lyra2_kernel.cl", gpu_id, build_opts);
 
 
-	bootStrapGPU =
-	    clCreateKernel(program[gpu_id], "lyra2_bootStrapGPU", &ret_code);
+	bootStrapAndAbsorb_kernel =
+	    clCreateKernel(program[gpu_id], "lyra2_bootStrapAndAbsorb", &ret_code);
 	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel bootStrapGPU. Double-check kernel name?");
+	    "Error creating kernel bootStrapAndAbsorb. Double-check kernel name?");
 
-
-	absorbInput_kernel =
-	    clCreateKernel(program[gpu_id], "lyra2_absorbInput", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel absorbInput. Double-check kernel name?");
 
 	reducedSqueezeRow0_kernel =
 	    clCreateKernel(program[gpu_id], "lyra2_reducedSqueezeRow0", &ret_code);
@@ -381,19 +362,13 @@ static void reset_()
 	    "Error creating kernel setupPhaseWanderingGPU. Double-check kernel name?");
 
 
-	squeeze_kernel =
-	    clCreateKernel(program[gpu_id], "lyra2_squeeze", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel squeeze. Double-check kernel name?");
-
-
 	release_clobj();
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
 	    warn, 4, self, create_clobj, release_clobj, M_COST * ROW_LEN_BYTES, 0);
 
 	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 0, 10000);
+	autotune_run(self, 1, 0, 1000);
 }
 
 static void reset(struct db_main *db)
@@ -631,22 +606,18 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		saved_idx, 0, NULL, multi_profilingEvent[2]), "Failed transferring index");
 
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], bootStrapGPU, 1,
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], bootStrapAndAbsorb_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
 		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], absorbInput_kernel, 1,
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], reducedSqueezeRow0_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
 		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], reducedSqueezeRow0_kernel, 1,
-		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel");
-
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], reducedDuplexRow_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[6]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel");
 
 	if(saved_salt->nParallel==1)
 		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], setupPhaseWanderingGPU_P1_kernel, 1,
@@ -657,10 +628,8 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 			NULL, &real_gws, lws, 0, NULL,
 			multi_profilingEvent[6]), "failed in clEnqueueNDRangeKernel");
 
+	opencl_process_event();
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], squeeze_kernel, 1,
-		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[6]), "failed in clEnqueueNDRangeKernel");
 
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_pKeysGPU, CL_TRUE,
