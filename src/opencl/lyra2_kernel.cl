@@ -25,9 +25,39 @@ struct lyra2_salt {
 
 #define memcpy(dst, src, size) gmemcpy(dst, src, size)
 
+void lyra2_initState(__global ulong * state)
+{
+	int threadNumber;
+	ulong start;
+
+	// Thread index:
+	threadNumber = get_global_id(0);
+
+	start = threadNumber * STATESIZE_INT64;
+	//First 512 bis are zeros
+	state[start + 0] = 0x0UL;
+	state[start + 1] = 0x0UL;
+	state[start + 2] = 0x0UL;
+	state[start + 3] = 0x0UL;
+	state[start + 4] = 0x0UL;
+	state[start + 5] = 0x0UL;
+	state[start + 6] = 0x0UL;
+	state[start + 7] = 0x0UL;
+	//Remainder BLOCK_LEN_BLAKE2_SAFE_BYTES are reserved to the IV
+	state[start + 8] = blake2b_IV_0;
+	state[start + 9] = blake2b_IV_1;
+	state[start + 10] = blake2b_IV_2;
+	state[start + 11] = blake2b_IV_3;
+	state[start + 12] = blake2b_IV_4;
+	state[start + 13] = blake2b_IV_5;
+	state[start + 14] = blake2b_IV_6;
+	state[start + 15] = blake2b_IV_7;
+}
+
+
 __kernel void lyra2_bootStrapGPU(__global ulong * memMatrixGPU,
     __global unsigned char *pkeysGPU, __global unsigned char *pwdGPU,
-    __global const uint * index, __global struct lyra2_salt *salt)
+    __global const uint * index, __global struct lyra2_salt *salt, __global ulong * state)
 {
 	int i, mi;
 
@@ -125,35 +155,9 @@ __kernel void lyra2_bootStrapGPU(__global ulong * memMatrixGPU,
 	ptrByte = (__global byte *) & memMatrixGPU[sliceStart];
 	ptrByte += nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES - 1;	//sets the pointer to the correct position: end of incomplete block
 	*ptrByte ^= 0x01;	//last byte of padding: at the end of the last incomplete block
-}
 
-__kernel void lyra2_initState(__global ulong * state)
-{
-	int threadNumber;
-	ulong start;
-
-	// Thread index:
-	threadNumber = get_global_id(0);
-
-	start = threadNumber * STATESIZE_INT64;
-	//First 512 bis are zeros
-	state[start + 0] = 0x0UL;
-	state[start + 1] = 0x0UL;
-	state[start + 2] = 0x0UL;
-	state[start + 3] = 0x0UL;
-	state[start + 4] = 0x0UL;
-	state[start + 5] = 0x0UL;
-	state[start + 6] = 0x0UL;
-	state[start + 7] = 0x0UL;
-	//Remainder BLOCK_LEN_BLAKE2_SAFE_BYTES are reserved to the IV
-	state[start + 8] = blake2b_IV_0;
-	state[start + 9] = blake2b_IV_1;
-	state[start + 10] = blake2b_IV_2;
-	state[start + 11] = blake2b_IV_3;
-	state[start + 12] = blake2b_IV_4;
-	state[start + 13] = blake2b_IV_5;
-	state[start + 14] = blake2b_IV_6;
-	state[start + 15] = blake2b_IV_7;
+	//.....
+	lyra2_initState(state);
 }
 
 

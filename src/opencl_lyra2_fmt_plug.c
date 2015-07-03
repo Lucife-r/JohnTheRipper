@@ -80,18 +80,15 @@ struct lyra2_salt {
 
 static char *saved_key;
 static unsigned int *saved_idx, key_idx;
-static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memory, cl_memMatrixGPU, cl_pKeysGPU, cl_stateThreadGPU, cl_stateIdxGPU;
-static cl_mem pinned_key, pinned_idx, pinned_result,
-    pinned_memory, pinned_salt, pinned_memMatrixGPU, pinned_pKeysGPU, pinned_stateThreadGPU, pinned_stateIdxGPU;
-static char *output, *memory;
+static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memMatrixGPU, cl_pKeysGPU, cl_stateThreadGPU, cl_stateIdxGPU;
+static cl_mem pinned_key, pinned_idx,
+     pinned_salt, pinned_pKeysGPU;
 static unsigned int M_COST, nPARALLEL, N_COLS;
 static struct lyra2_salt *saved_salt;
 static char *saved_key;
-static char *memMatrixGPU;
 static char *pKeysGPU;
-static char *stateThreadGPU, *stateIdxGPU;
 static int clobj_allocated;
-cl_kernel bootStrapGPU,initState_kernel, absorbInput_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow_kernel, setupPhaseWanderingGPU_kernel, setupPhaseWanderingGPU_P1_kernel, squeeze_kernel;
+cl_kernel bootStrapGPU, absorbInput_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow_kernel, setupPhaseWanderingGPU_kernel, setupPhaseWanderingGPU_P1_kernel, squeeze_kernel;
 
 
 static struct fmt_main *self;
@@ -129,35 +126,12 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		return;
 	clobj_allocated = 1;
 
-	pinned_memory =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    M_COST * gws * 8, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
-	cl_memory =
-	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
-	    M_COST * gws * 8, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	memory =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_memory, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, M_COST * gws * 8, 0,
-	    NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
-	pinned_memMatrixGPU =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    gws * M_COST * ROW_LEN_BYTES, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_memMatrixGPU =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    gws * M_COST * ROW_LEN_BYTES, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	memMatrixGPU =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_memMatrixGPU, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, gws * M_COST * ROW_LEN_BYTES, 0,
-	    NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
 
 	pinned_pKeysGPU =
@@ -176,35 +150,17 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
 	
-	pinned_stateThreadGPU =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    gws * nPARALLEL * STATESIZE_BYTES, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_stateThreadGPU =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    gws * nPARALLEL * STATESIZE_BYTES, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	stateThreadGPU =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_stateThreadGPU, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, gws * nPARALLEL * STATESIZE_BYTES, 0,
-	    NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
-	pinned_stateIdxGPU =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    gws * nPARALLEL * BLOCK_LEN_BLAKE2_SAFE_BYTES, NULL, &ret_code);
+
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_stateIdxGPU =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    gws * nPARALLEL * BLOCK_LEN_BLAKE2_SAFE_BYTES, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	stateIdxGPU =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_stateIdxGPU, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, gws * nPARALLEL * BLOCK_LEN_BLAKE2_SAFE_BYTES, 0,
-	    NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
 
 	pinned_key =
@@ -258,20 +214,10 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    NULL, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping saved_idx");
 
-	pinned_result =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    ((BINARY_SIZE * gws) + 4) / 4 * 4, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_result =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    ((BINARY_SIZE * gws) + 4) / 4 * 4, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	output =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_result, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, ((BINARY_SIZE * gws) + 4) / 4 * 4,
-	    0, NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping output");
 
 
 	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 0, sizeof(cl_mem),
@@ -284,9 +230,9 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		(void *)&cl_saved_idx), "Error setting argument 3 in bootStrapGPU");
 	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 4, sizeof(cl_mem),
 		(void *)&cl_saved_salt), "Error setting argument 4 in bootStrapGPU");
+	HANDLE_CLERROR(clSetKernelArg(bootStrapGPU, 5, sizeof(cl_mem),
+		(void *)&cl_stateThreadGPU), "Error setting argument 5 in bootStrapGPU");
 
-	HANDLE_CLERROR(clSetKernelArg(initState_kernel, 0, sizeof(cl_mem),
-		(void *)&cl_stateThreadGPU), "Error setting argument 0 in initState_kernel");
 
 	HANDLE_CLERROR(clSetKernelArg(absorbInput_kernel, 0, sizeof(cl_mem),
 		(void *)&cl_memMatrixGPU), "Error setting argument 0 in absorbInput_kernel");
@@ -341,8 +287,7 @@ static void release_clobj(void)
 	if (!clobj_allocated)
 		return;
 	clobj_allocated = 0;
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_result,
-		output, 0, NULL, NULL), "Error Unmapping output");
+
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_key,
 		saved_key, 0, NULL, NULL), "Error Unmapping saved_key");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_idx,
@@ -350,38 +295,20 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_salt,
 		saved_salt, 0, NULL, NULL),
 	    "Error Unmapping saved_salt");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_memory,
-		memory, 0, NULL, NULL), "Error Unmapping memory");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_memMatrixGPU,
-		memMatrixGPU, 0, NULL, NULL), "Error Unmapping memMatrixGPU");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_pKeysGPU,
 		pKeysGPU, 0, NULL, NULL), "Error Unmapping pKeysGPU");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_stateThreadGPU,
-		stateThreadGPU, 0, NULL, NULL), "Error Unmapping stateThreadGPU");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_stateIdxGPU,
-		stateIdxGPU, 0, NULL, NULL), "Error Unmapping stateIdxGPU");
 
 	HANDLE_CLERROR(clFinish(queue[gpu_id]),
 	    "Error releasing memory mappings");
 
-	HANDLE_CLERROR(clReleaseMemObject(pinned_memory),
-	    "Release pinned result buffer");
-	HANDLE_CLERROR(clReleaseMemObject(pinned_result),
-	    "Release pinned result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_key),
 	    "Release pinned key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_idx),
 	    "Release pinned index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_salt),
 	    "Release pinned index buffer");	
-	HANDLE_CLERROR(clReleaseMemObject(pinned_memMatrixGPU),
-	    "Release pinned memMatrixGPU buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_pKeysGPU),
 	    "Release pinned pKeysGPU buffer");
-	HANDLE_CLERROR(clReleaseMemObject(pinned_stateThreadGPU),
-	    "Release pinned stateThreadGPU buffer");
-	HANDLE_CLERROR(clReleaseMemObject(pinned_stateIdxGPU),
-	    "Release pinned stateIdxGPU buffer");
 	
 	HANDLE_CLERROR(clReleaseMemObject(cl_result), "Release result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_key), "Release key buffer");
@@ -389,7 +316,6 @@ static void release_clobj(void)
 	    "Release index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_salt),
 	    "Release real salt");
-	HANDLE_CLERROR(clReleaseMemObject(cl_memory), "Release memory");
 	HANDLE_CLERROR(clReleaseMemObject(cl_memMatrixGPU), "Release memMatrixGPU");
 	HANDLE_CLERROR(clReleaseMemObject(cl_pKeysGPU), "Release memMatrixGPU");
 	HANDLE_CLERROR(clReleaseMemObject(cl_stateThreadGPU), "Release stateThreadGPU");
@@ -402,7 +328,6 @@ static void done(void)
 	release_clobj();
 
 	HANDLE_CLERROR(clReleaseKernel(bootStrapGPU), "Release bootStrapGPU");
-	HANDLE_CLERROR(clReleaseKernel(initState_kernel), "Release initState_kernel");
 	HANDLE_CLERROR(clReleaseKernel(absorbInput_kernel), "Release absorbInput_kernel");
 	HANDLE_CLERROR(clReleaseKernel(reducedSqueezeRow0_kernel), "Release reducedSqueezeRow0_kernel");
 	HANDLE_CLERROR(clReleaseKernel(reducedDuplexRow_kernel), "Release reducedDuplexRow_kernel");
@@ -428,10 +353,6 @@ static void reset_()
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel bootStrapGPU. Double-check kernel name?");
 
-	initState_kernel =
-	    clCreateKernel(program[gpu_id], "lyra2_initState", &ret_code);
-	HANDLE_CLERROR(ret_code,
-	    "Error creating kernel initState. Double-check kernel name?");
 
 	absorbInput_kernel =
 	    clCreateKernel(program[gpu_id], "lyra2_absorbInput", &ret_code);
@@ -714,18 +635,14 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		NULL, &real_gws, lws, 0, NULL,
 		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
 
-	
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], initState_kernel, 1,
-		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], absorbInput_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], reducedSqueezeRow0_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
-		multi_profilingEvent[6]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel");
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], reducedDuplexRow_kernel, 1,
 		NULL, &real_gws, lws, 0, NULL,
@@ -748,7 +665,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_pKeysGPU, CL_TRUE,
 		0, saved_salt->hash_size * count * saved_salt->nParallel, pKeysGPU, 0, NULL,
-		multi_profilingEvent[6]), "failed in reading data back");
+		multi_profilingEvent[7]), "failed in reading data back");
 
 	if (saved_salt->nParallel > 1)
 	{
