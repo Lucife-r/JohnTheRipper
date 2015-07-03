@@ -180,7 +180,7 @@ inline static void spongeLyra_priv(ulong * v)
 	}
 }
 
-inline void absorbBlockBlake2Safe(__global ulong * state, __global ulong * in)
+inline void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
 {
 	//XORs the first BLOCK_LEN_BLAKE2_SAFE_INT64 words of "in" with the current state
 	state[0] ^= in[0];
@@ -193,15 +193,15 @@ inline void absorbBlockBlake2Safe(__global ulong * state, __global ulong * in)
 	state[7] ^= in[7];
 
 	//Applies the transformation f to the sponge's state
-	spongeLyra(state);
+	spongeLyra_priv(state);
 }
 
 __kernel void lyra2_absorbInput(__global ulong * memMatrixGPU,
-    __global ulong * stateThreadGPU, __global ulong * stateIdxGPU,
+    __global ulong * stateThreadGPU_, __global ulong * stateIdxGPU,
     __global const uint * index, __global struct lyra2_salt *salt)
 {
+	int i;
 	__global ulong *ptrWord;
-	__global ulong *threadState;
 	uint threadNumber = get_global_id(0);
 	ulong kP;
 	ulong sliceStart;
@@ -213,8 +213,14 @@ __kernel void lyra2_absorbInput(__global ulong * memMatrixGPU,
 	inlen = index[thStart + 1] - index[thStart];
 	saltlen = salt->salt_length;
 
-
 	ulong nBlocksInput;
+
+	ulong stateThreadGPU[STATESIZE_INT64];
+
+	stateThreadGPU_ += threadNumber * STATESIZE_INT64;
+
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU[i] = stateThreadGPU_[i];
 
 	if (nPARALLEL == 1)
 		nBlocksInput =
@@ -227,28 +233,21 @@ __kernel void lyra2_absorbInput(__global ulong * memMatrixGPU,
 			8 * sizeof(int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
 
 	sliceStart = threadNumber * salt->sizeSlicedRows;
-	threadState =
-	    (__global ulong *) & stateThreadGPU[threadNumber *
-	    STATESIZE_INT64];
 
 	//Absorbing salt, password and params: this is the only place in which the block length is hard-coded to 512 bits, for compatibility with Blake2b and BlaMka
 	ptrWord = (__global ulong *) & memMatrixGPU[sliceStart];	//threadSliceMatrix;
+
 	for (kP = 0; kP < nBlocksInput; kP++) {
-		absorbBlockBlake2Safe(threadState, ptrWord);	//absorbs each block of pad(pwd || salt || params)
+		absorbBlockBlake2Safe(stateThreadGPU, ptrWord);	//absorbs each block of pad(pwd || salt || params)
 		ptrWord += BLOCK_LEN_BLAKE2_SAFE_INT64;	//BLOCK_LEN_BLAKE2_SAFE_INT64;  //goes to next block of pad(pwd || salt || params)
 	}
+
+	for (i = 0; i < STATESIZE_INT64; i++)
+		stateThreadGPU_[i] = stateThreadGPU[i];
 }
 
-inline static void reducedSpongeLyra(__global ulong * v)
-{
-	int i;
 
-	for (i = 0; i < RHO; i++) {
-		ROUND_LYRA(i);
-	}
-}
-
-inline static void reducedSpongeLyra_priv(ulong * v)
+inline static void reducedSpongeLyra(ulong * v)
 {
 	int i;
 
@@ -258,71 +257,99 @@ inline static void reducedSpongeLyra_priv(ulong * v)
 }
 
 __kernel void lyra2_reducedSqueezeRow0(__global ulong * rowOut,
-    __global ulong * state, __global struct lyra2_salt *salt)
+    __global ulong * state_, __global struct lyra2_salt *salt)
 {
 	int threadNumber;
 	ulong sliceStart;
-	ulong stateStart;
 	uint N_COLS = salt->nCols;
+	ulong state[STATESIZE_INT64];
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * salt->sizeSlicedRows;
+
+	state_ += threadNumber * STATESIZE_INT64;
 
 	__global ulong *ptrWord = &rowOut[sliceStart + (N_COLS - 1) * BLOCK_LEN_INT64];	//In Lyra2: pointer to M[0][C-1]
 	int i, j;
+
+	for (j = 0; j < STATESIZE_INT64; j++) {
+		state[j] = state_[j];
+	}
 	//M[0][C-1-col] = H.reduced_squeeze()
 	for (i = 0; i < N_COLS; i++) {
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWord[j] = state[stateStart + j];
+			ptrWord[j] = state[j];
 		}
 
 		//Goes to next block (column) that will receive the squeezed data
 		ptrWord -= BLOCK_LEN_INT64;
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra(state);
+	}
+
+	for (j = 0; j < STATESIZE_INT64; j++) {
+		state_[j] = state[j];
 	}
 }
 
 
 __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
-    __global ulong * state, __global struct lyra2_salt *salt)
+    __global ulong * state_, __global struct lyra2_salt *salt)
 {
 	int i, j;
 
 	int threadNumber;
 	ulong sliceStart;
-	ulong stateStart;
 	uint N_COLS = salt->nCols;
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * salt->sizeSlicedRows;
+
+	ulong ptrWordIn_copy[BLOCK_LEN_INT64];
+	ulong ptrWordOut_copy[BLOCK_LEN_INT64];
+	ulong state[STATESIZE_INT64];
 
 	//Row to feed the sponge
 	__global ulong *ptrWordIn = (__global ulong *) & rowIn[sliceStart + 0 * ROW_LEN_INT64];	//In Lyra2: pointer to prev
 	//Row to receive the sponge's output
-	__global ulong *ptrWordOut = (__global ulong *) & rowIn[sliceStart + 1 * ROW_LEN_INT64 + (N_COLS - 1) * BLOCK_LEN_INT64];	//In Lyra2: pointer to row
+	__global ulong *ptrWordOut = (__global ulong *) & rowIn[sliceStart + 1 * ROW_LEN_INT64 + (N_COLS - 1) * BLOCK_LEN_INT64];
+	//In Lyra2: pointer to row
+	state_ += threadNumber * STATESIZE_INT64;
+
+	for (j = 0; j < STATESIZE_INT64; j++) {
+		state[j] = state_[j];
+	}
 
 	for (i = 0; i < N_COLS; i++) {
 
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn_copy[j] = ptrWordIn[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut_copy[j] = ptrWordOut[j];
+		}
+
 		//Absorbing "M[0][col]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^= (ptrWordIn[j]);
+			state[j] ^= (ptrWordIn_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra(state);
 
 		//M[1][C-1-col] = M[0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn[j] ^ state[stateStart + j];
+			ptrWordOut_copy[j] = ptrWordIn_copy[j] ^ state[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut[j] = ptrWordOut_copy[j];
 		}
 
 		//Input: next column (i.e., next block in sequence)
@@ -331,9 +358,6 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 		ptrWordOut -= BLOCK_LEN_INT64;
 	}
 
-
-	stateStart = threadNumber * STATESIZE_INT64;
-	sliceStart = threadNumber * salt->sizeSlicedRows;
 
 	//Row to feed the sponge
 	ptrWordIn = (__global ulong *) & rowIn[sliceStart + 1 * ROW_LEN_INT64];	//In Lyra2: pointer to prev
@@ -341,24 +365,38 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 	ptrWordOut = (__global ulong *) & rowIn[sliceStart + 2 * ROW_LEN_INT64 + (N_COLS - 1) * BLOCK_LEN_INT64];	//In Lyra2: pointer to row
 
 	for (i = 0; i < N_COLS; i++) {
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn_copy[j] = ptrWordIn[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut_copy[j] = ptrWordOut[j];
+		}
 
 		//Absorbing "M[0][col]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			state[stateStart + j] ^= (ptrWordIn[j]);
+			state[j] ^= (ptrWordIn_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra(&state[stateStart]);
+		reducedSpongeLyra(state);
 
 		//M[1][C-1-col] = M[0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn[j] ^ state[stateStart + j];
+			ptrWordOut_copy[j] = ptrWordIn_copy[j] ^ state[j];
+		}
+	
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut[j] = ptrWordOut_copy[j];
 		}
 
 		//Input: next column (i.e., next block in sequence)
 		ptrWordIn += BLOCK_LEN_INT64;
 		//Output: goes to previous column
 		ptrWordOut -= BLOCK_LEN_INT64;
+	}
+	for (j = 0; j < STATESIZE_INT64; j++) {
+		state_[j] = state[j];
 	}
 }
 
@@ -376,6 +414,12 @@ void reducedDuplexRowFilling(ulong * state,
 	threadNumber = get_global_id(0);
 
 	sliceStart = threadNumber * sizeSlicedRows;	//sizeSlicedRows = (nRows/nPARALLEL) * ROW_LEN_INT64
+
+	ulong ptrWordInOut_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn0_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn1_copy[BLOCK_LEN_INT64];
+	ulong ptrWordOut_copy[BLOCK_LEN_INT64];
+
 	//jP slice must be inside the  password´s thread pool
 	//The integer part of threadNumber/nPARALLEL multiplied by nPARALLEL is the Base Slice Start for the password thread pool
 	sliceStartjP =
@@ -395,25 +439,49 @@ void reducedDuplexRowFilling(ulong * state,
 	__global ulong *ptrWordOut = (__global ulong *) & memMatrixGPU[sliceStart + (row0 * ROW_LEN_INT64) + ((N_COLS - 1) * BLOCK_LEN_INT64)];	//In Lyra2: pointer to row0, to be initialized
 
 	for (i = 0; i < N_COLS; i++) {
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut_copy[j] = ptrWordOut[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut_copy[j] = ptrWordInOut[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn0_copy[j] = ptrWordIn0[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn1_copy[j] = ptrWordIn1[j];
+		}
+		
 		//Absorbing "M[rowP] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut[j] + ptrWordIn0[j] + ptrWordIn1[j]);
+			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] + ptrWordIn1_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra_priv(state);
+		reducedSpongeLyra(state);
 
 		//M[row0][col] = M[prev0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn0[j] ^ state[j];
+			ptrWordOut_copy[j] = ptrWordIn0_copy[j] ^ state[j];
 		}
 
 		//M[rowP][col] = M[rowP][col] XOR rot(rand)
 		//rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 		//we rotate 2 words for compatibility with the SSE implementation
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+			ptrWordInOut_copy[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut[j] = ptrWordOut_copy[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut[j] = ptrWordInOut_copy[j];
 		}
 
 		//Inputs: next column (i.e., next block in sequence)
@@ -454,6 +522,15 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	__global ulong *ptrWordIn0;	//In Lyra2: pointer to prev0
 
 	int i, j;
+#ifdef USE_VECTORS
+	ulong8 l1,l2,l3,l4;
+	ulong4 ll1,ll2,ll3,ll4; //pomidor
+#endif
+
+	ulong ptrWordInOut0_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn0_copy[BLOCK_LEN_INT64];
+	ulong ptrWordInP_copy[BLOCK_LEN_INT64];
+
 
 	for (i = 0; i < N_COLS; i++) {
 		//col0 = LSW(rot^3(rand)) mod N_COLS
@@ -464,18 +541,35 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 		    (__global ulong *) & memMatrixGPU[sliceStart +
 		    (prev0 * ROW_LEN_INT64) + randomColumn0];
 
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut0_copy[j]=ptrWordInOut0[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn0_copy[j]=ptrWordIn0[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInP_copy[j]=ptrWordInP[j];
+		}
+
+
 		//Absorbing "M[row0] [+] M[prev0] [+] M[rowP]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut0[j] + ptrWordIn0[j] + ptrWordInP[j]);
+			    (ptrWordInOut0_copy[j] + ptrWordIn0_copy[j] + ptrWordInP_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra_priv(state);
+		reducedSpongeLyra(state);
 
 		//M[rowInOut0][col] = M[rowInOut0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut0[j] ^= state[j];
+			ptrWordInOut0_copy[j] ^= state[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut0[j]=ptrWordInOut0_copy[j];
 		}
 
 		//Goes to next block
@@ -485,57 +579,32 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	}
 }
 
-void absorbRandomColumn(__global ulong * in, __global ulong * state,
+void absorbRandomColumn(__global ulong * in, ulong * state,
     ulong row0, ulong randomColumn0, uint nPARALLEL, uint N_COLS,
     ulong sizeSlicedRows)
 {
 	int i;
 	int threadNumber;
 	ulong sliceStart;
-	ulong stateStart;
 
 	// Thread index:
 	threadNumber = get_global_id(0);
 
-
-	stateStart = threadNumber * STATESIZE_INT64;
 	sliceStart = threadNumber * sizeSlicedRows;
 
 	__global ulong *ptrWordIn =
 	    (__global ulong *) & in[sliceStart + (row0 * ROW_LEN_INT64) +
 	    randomColumn0];
 
+	ulong  ptrWordIn_copy[BLOCK_LEN_INT64];
 
-	//absorbs the column picked
 	for (i = 0; i < BLOCK_LEN_INT64; i++) {
-		state[stateStart + i] ^= ptrWordIn[i];
+		ptrWordIn_copy[i] = ptrWordIn[i];
 	}
 
-	//Applies the full-round transformation f to the sponge's state
-	spongeLyra(&state[stateStart]);
-}
-
-void absorbRandomColumn_priv(__global ulong * in, ulong * state,
-    ulong row0, ulong randomColumn0, uint nPARALLEL, uint N_COLS,
-    ulong sizeSlicedRows)
-{
-	int i;
-	int threadNumber;
-	ulong sliceStart;
-
-	// Thread index:
-	threadNumber = get_global_id(0);
-
-	sliceStart = threadNumber * sizeSlicedRows;
-
-	__global ulong *ptrWordIn =
-	    (__global ulong *) & in[sliceStart + (row0 * ROW_LEN_INT64) +
-	    randomColumn0];
-
-
 	//absorbs the column picked
 	for (i = 0; i < BLOCK_LEN_INT64; i++) {
-		state[i] ^= ptrWordIn[i];
+		state[i] ^= ptrWordIn_copy[i];
 	}
 
 	//Applies the full-round transformation f to the sponge's state
@@ -595,16 +664,14 @@ void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
 			offTemp = off0;
 			off0 = offP;
 			offP = offTemp;
-			//__syncthreads();
 			barrier(CLK_LOCAL_MEM_FENCE);
 		}
 	}
-	//__syncthreads();
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	//============================ Wrap-up Phase ===============================//
 	//Absorbs one last block of the memory matrix with the full-round sponge
-	absorbRandomColumn_priv(memMatrixGPU, stateThreadGPU, row0, 0,
+	absorbRandomColumn(memMatrixGPU, stateThreadGPU, row0, 0,
 	    nPARALLEL, N_COLS, sizeSlicedRows);
 }
 
@@ -671,13 +738,10 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 		if (row0 == sync) {
 			sync += sqrt / 2;	//increment synchronize counter
 			jP = (jP + 1) % nPARALLEL;	//change the visitation thread
-			//__syncthreads();
 			barrier(CLK_LOCAL_MEM_FENCE);
 		}
 	}
 
-	//Waits all threads
-	//__syncthreads();
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	//Now goes to Wandering Phase and the Absorb from Wrap-up
@@ -705,6 +769,11 @@ void reducedDuplexRowFilling_P1(ulong * state,
 
 	sliceStart = threadNumber * sizeSlicedRows;	//sizeSlicedRows = (nRows/nPARALLEL) * ROW_LEN_INT64
 
+	ulong ptrWordInOut_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn0_copy[BLOCK_LEN_INT64];
+	ulong ptrWordIn1_copy[BLOCK_LEN_INT64];
+	ulong ptrWordOut_copy[BLOCK_LEN_INT64];
+
 	//Row used only as input (rowIn0 or M[prev0])
 	__global ulong *ptrWordIn0 = (__global ulong *) & memMatrixGPU[sliceStart + prev0 * ROW_LEN_INT64];	//In Lyra2: pointer to prev0, the last row ever initialized
 
@@ -718,25 +787,49 @@ void reducedDuplexRowFilling_P1(ulong * state,
 	__global ulong *ptrWordOut = (__global ulong *) & memMatrixGPU[sliceStart + (row0 * ROW_LEN_INT64) + ((N_COLS - 1) * BLOCK_LEN_INT64)];	//In Lyra2: pointer to row0, to be initialized
 
 	for (i = 0; i < N_COLS; i++) {
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut_copy[j] = ptrWordOut[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut_copy[j] = ptrWordInOut[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn0_copy[j] = ptrWordIn0[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordIn1_copy[j] = ptrWordIn1[j];
+		}
+
 		//Absorbing "M[row1] [+] M[prev0] [+] M[prev1]"
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
 			state[j] ^=
-			    (ptrWordInOut[j] + ptrWordIn0[j] + ptrWordIn1[j]);
+			    (ptrWordInOut_copy[j] + ptrWordIn0_copy[j] + ptrWordIn1_copy[j]);
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra_priv(state);
+		reducedSpongeLyra(state);
 
 		//M[row0][col] = M[prev0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordOut[j] = ptrWordIn0[j] ^ state[j];
+			ptrWordOut_copy[j] = ptrWordIn0_copy[j] ^ state[j];
 		}
 
 		//M[row1][col] = M[row1][col] XOR rot(rand)
 		//rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 		//we rotate 2 words for compatibility with the SSE implementation
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
-			ptrWordInOut[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+			ptrWordInOut_copy[j] ^= state[((j + 2) % BLOCK_LEN_INT64)];	// BLOCK_LEN_INT64 = 12
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordOut[j] = ptrWordOut_copy[j];
+		}
+
+		for (j = 0; j < BLOCK_LEN_INT64; j++) {
+			ptrWordInOut[j] = ptrWordInOut_copy[j];
 		}
 
 		//Inputs: next column (i.e., next block in sequence)
@@ -793,7 +886,7 @@ void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
 		}
 
 		//Applies the reduced-round transformation f to the sponge's state
-		reducedSpongeLyra_priv(state);
+		reducedSpongeLyra(state);
 
 		//M[rowInOut0][col] = M[rowInOut0][col] XOR rand
 		for (j = 0; j < BLOCK_LEN_INT64; j++) {
@@ -848,7 +941,7 @@ void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
 
 	//============================ Wrap-up Phase ===============================//
 	//Absorbs one last block of the memory matrix with the full-round sponge
-	absorbRandomColumn_priv(memMatrixGPU, stateThreadGPU, row0, 0,
+	absorbRandomColumn(memMatrixGPU, stateThreadGPU, row0, 0,
 	    nPARALLEL, N_COLS, sizeSlicedRows);
 
 }

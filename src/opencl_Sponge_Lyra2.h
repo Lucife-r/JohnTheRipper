@@ -62,8 +62,7 @@ typedef unsigned char byte;
     t0=v[12]; t1=v[13]; t2=v[14]; v[12]=v[15]; v[13]=t0; v[14]=t1; v[15]=t2;
 
 /*Blake2b's G function*/
-#define G(r,i,a,b,c,d) \
-  do { \
+#define G(a,b,c,d) \
     a = a + b; \
     d = rotr64(d ^ a, 32); \
     c = c + d; \
@@ -72,19 +71,19 @@ typedef unsigned char byte;
     d = rotr64(d ^ a, 16); \
     c = c + d; \
     b = rotr64(b ^ c, 63); \
-  } while(0)
 
 
 /*One Round of the Blake2b's compression function*/
 #define ROUND_LYRA(r)  \
-    G(r,0,v[ 0],v[ 4],v[ 8],v[12]); \
-    G(r,1,v[ 1],v[ 5],v[ 9],v[13]); \
-    G(r,2,v[ 2],v[ 6],v[10],v[14]); \
-    G(r,3,v[ 3],v[ 7],v[11],v[15]); \
-    G(r,4,v[ 0],v[ 5],v[10],v[15]); \
-    G(r,5,v[ 1],v[ 6],v[11],v[12]); \
-    G(r,6,v[ 2],v[ 7],v[ 8],v[13]); \
-    G(r,7,v[ 3],v[ 4],v[ 9],v[14]);
+    G(v[ 0],v[ 4],v[ 8],v[12]); \
+    G(v[ 1],v[ 5],v[ 9],v[13]); \
+    G(v[ 2],v[ 6],v[10],v[14]); \
+    G(v[ 3],v[ 7],v[11],v[15]); \
+    G(v[ 0],v[ 5],v[10],v[15]); \
+    G(v[ 1],v[ 6],v[11],v[12]); \
+    G(v[ 2],v[ 7],v[ 8],v[13]); \
+    G(v[ 3],v[ 4],v[ 9],v[14]);
 
+//#define USE_VECTORS 1
 
 #endif /* SPONGE_H_ */
