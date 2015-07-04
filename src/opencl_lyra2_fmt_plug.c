@@ -3,7 +3,6 @@
  * and it is hereby released to the general public under the following terms:
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted.
- * Based on opencl_mysqlsha1_fmt_plug.c
  */
 
 #ifdef HAVE_OPENCL

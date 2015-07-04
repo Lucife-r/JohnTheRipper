@@ -41,8 +41,8 @@ john_register_one(&cuda_fmt_lyra2);
 
 #define SALT_ALIGN			1
 
-#define BLOCKS				32
-#define THREADS				128
+#define BLOCKS				64
+#define THREADS				32
 #define MAX_KEYS_PER_CRYPT		(BLOCKS*THREADS)
 #define MIN_KEYS_PER_CRYPT		BLOCKS
 
@@ -354,6 +354,18 @@ static unsigned int tunable_cost_m(void *_salt)
 	return salt->m_cost;
 }
 
+static unsigned int tunable_cost_c(void *_salt)
+{
+	struct lyra2_salt *salt=(struct lyra2_salt *)_salt;
+	return salt->nCols;
+}
+
+static unsigned int tunable_cost_p(void *_salt)
+{
+	struct lyra2_salt *salt=(struct lyra2_salt *)_salt;
+	return salt->nParallel;
+}
+
 #endif
 
 struct fmt_main cuda_fmt_lyra2 = {
@@ -375,7 +387,9 @@ struct fmt_main cuda_fmt_lyra2 = {
 #if FMT_MAIN_VERSION > 11
 		{
 			"t",
-			"m"
+			"m",
+			"c",
+			"p"
 		},
 #endif
 		tests
@@ -391,7 +405,9 @@ struct fmt_main cuda_fmt_lyra2 = {
 #if FMT_MAIN_VERSION > 11
 		{
 			tunable_cost_t,
-			tunable_cost_m
+			tunable_cost_m,
+			tunable_cost_c,
+			tunable_cost_p
 		},
 #endif
 		fmt_default_source,
