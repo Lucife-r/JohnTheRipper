@@ -592,13 +592,13 @@ static int salt_hash(void *_salt)
 }
 
 #if FMT_MAIN_VERSION > 11
-static unsigned int tunable_cost_N(void *_salt)
+static unsigned int tunable_cost_t(void *_salt)
 {
 	struct pomelo_salt *salt=(struct pomelo_salt *)_salt;
 	return salt->t_cost;
 }
 
-static unsigned int tunable_cost_r(void *_salt)
+static unsigned int tunable_cost_m(void *_salt)
 {
 	struct pomelo_salt *salt=(struct pomelo_salt *)_salt;
 	return salt->m_cost;
@@ -624,8 +624,8 @@ struct fmt_main fmt_opencl_pomelo = {
 		FMT_CASE | FMT_8_BIT,
 #if FMT_MAIN_VERSION > 11
 		{
-			"N",
-			"r"
+			"t",
+			"m"
 		},
 #endif
 		tests
@@ -640,8 +640,8 @@ struct fmt_main fmt_opencl_pomelo = {
 		get_salt,
 #if FMT_MAIN_VERSION > 11
 		{
-			tunable_cost_N,
-			tunable_cost_r
+			tunable_cost_t,
+			tunable_cost_m
 		},
 #endif
 		fmt_default_source,
