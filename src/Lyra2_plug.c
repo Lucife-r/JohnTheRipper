@@ -759,14 +759,7 @@ int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned in
     squeeze(state, K, kLen);
     
     //==========================================================================/
-
-    //========================= Freeing the memory =============================//
-    free(memMatrix);
-    free(wholeMatrix);
-
-    //Wiping out the sponge's internal state before freeing it
     memset(state, 0, 16 * sizeof (uint64_t));
-    free(state);
     //==========================================================================/
 
     return 0;

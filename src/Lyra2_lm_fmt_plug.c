@@ -26,9 +26,13 @@ john_register_one(&fmt_lyra2_lm);
 #include "Sponge_sse.h"
 
 #define FORMAT_LABEL			"Lyra2-lm"
-#define FORMAT_NAME			"Generic Lyra2"
+#define FORMAT_NAME			""
 
-#define ALGORITHM_NAME			" "
+#ifdef SIMD_COEF_64
+#define ALGORITHM_NAME			"Blake2/SSE2"
+#else
+#define ALGORITHM_NAME			"Blake2"
+#endif
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -103,7 +107,8 @@ static void init(struct fmt_main *self)
 
 static void done(void)
 {
-	free_allocated(1);
+	prev_saved_salt=saved_salt;
+	free_allocated();
 	free(saved_key);
 	free(crypted);
 }
@@ -235,7 +240,7 @@ static void *get_salt(char *ciphertext)
 }
 
 
-static void free_allocated(int done)
+static void free_allocated()
 {
 	int i,threadNumber;
 
@@ -243,24 +248,6 @@ static void free_allocated(int done)
 		return;
 	alloc=0;
 
-	if(done)
-	for(i=0;i<max_threads/saved_salt.nThreads*saved_salt.nThreads;i++)
-	{
-		free(allocated[i].memMatrix); 
-		free(allocated[i].pKeys);
-		pthread_barrier_destroy(&barrier[i]);
-		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
-		{
-			free(allocated[i].threadSliceMatrix[threadNumber]);
-			free(allocated[i].threadKey[threadNumber]);
-			free(allocated[i].threadState[threadNumber]);
-		}
-
-		free(allocated[i].threadSliceMatrix);
-		free(allocated[i].threadKey);
-		free(allocated[i].threadState);
-	}
-	else
 	for(i=0;i<max_threads/prev_saved_salt.nThreads*prev_saved_salt.nThreads;i++)
 	{
 		free(allocated[i].memMatrix); 
@@ -305,7 +292,7 @@ static void set_salt(void *salt)
 	
 	threads=(max_threads/saved_salt.nThreads)*saved_salt.nThreads;
 
-	free_allocated(0);
+	free_allocated();
 	allocated=malloc(threads*(sizeof(struct lyra2_lm_allocation)));
 	barrier=malloc(threads*sizeof(pthread_barrier_t));
 
@@ -473,6 +460,18 @@ static unsigned int tunable_cost_m(void *_salt)
 	return salt->m_cost;
 }
 
+static unsigned int tunable_cost_c(void *_salt)
+{
+	struct lyra2_salt *salt=(struct lyra2_salt *)_salt;
+	return salt->nCols;
+}
+
+static unsigned int tunable_cost_p(void *_salt)
+{
+	struct lyra2_salt *salt=(struct lyra2_salt *)_salt;
+	return salt->nThreads;
+}
+
 #endif
 
 struct fmt_main fmt_lyra2_lm = {
@@ -495,7 +494,9 @@ struct fmt_main fmt_lyra2_lm = {
 #if FMT_MAIN_VERSION > 11
 		{
 			"t",
-			"m"
+			"m",
+			"c",
+			"p"
 		},
 #endif
 		tests
@@ -511,7 +512,9 @@ struct fmt_main fmt_lyra2_lm = {
 #if FMT_MAIN_VERSION > 11
 		{
 			tunable_cost_t,
-			tunable_cost_m
+			tunable_cost_m,
+			tunable_cost_c,
+			tunable_cost_p
 		},
 #endif
 		fmt_default_source,

@@ -26,9 +26,13 @@ john_register_one(&fmt_lyra2);
 #endif
 
 #define FORMAT_LABEL			"Lyra2"
-#define FORMAT_NAME			"Generic Lyra2"
+#define FORMAT_NAME			""
 
-#define ALGORITHM_NAME			" "
+#ifdef SIMD_COEF_64
+#define ALGORITHM_NAME			"Blake2/SSE2"
+#else
+#define ALGORITHM_NAME			"Blake2"
+#endif
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -105,6 +109,7 @@ static void init(struct fmt_main *self)
 
 static void done(void)
 {
+	prev_saved_salt=saved_salt;
 	free_allocated();
 	free(saved_key);
 	free(crypted);
@@ -266,15 +271,16 @@ static void free_allocated()
 		free(allocated[i].sliceStart);
 		free(allocated[i].ptrWord);
 	
-		free(allocated[i].threadSliceMatrix); 
-		free(allocated[i].threadKey);
-		free(allocated[i].threadState);
 		for(threadNumber=0;threadNumber<prev_saved_salt.nThreads;threadNumber++)
 		{
 			free(allocated[i].threadSliceMatrix[threadNumber]);
 			free(allocated[i].threadKey[threadNumber]);
 			free(allocated[i].threadState[threadNumber]);
 		}
+
+		free(allocated[i].threadSliceMatrix); 
+		free(allocated[i].threadKey);
+		free(allocated[i].threadState);
 	}
 	free(allocated);
 }
@@ -359,7 +365,7 @@ static void set_salt(void *salt)
 		}
 	}
 
-	alloc=1;
+	alloc=0;
 }
 
 static int cmp_all(void *binary, int count)
