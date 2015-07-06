@@ -15,8 +15,6 @@ john_register_one(&fmt_opencl_parallel);
 #else
 
 #include <string.h>
-
-#include "path.h"
 #include "arch.h"
 #include "misc.h"
 #include "common.h"

@@ -167,7 +167,4 @@ __global__ void reducedDuplexRow1and2(uint64_t *rowIn, uint64_t *state, unsigned
 __global__ void setupPhaseWanderingGPU(uint64_t * memMatrixGPU, uint64_t * stateThreadGPU, uint64_t sizeSlice, unsigned int totalPasswords, unsigned int timeCost, unsigned int nPARALLEL, unsigned int N_COLS);
 __global__ void setupPhaseWanderingGPU_P1(uint64_t * memMatrixGPU, uint64_t * stateThreadGPU, uint64_t sizeSlice, unsigned int totalPasswords, unsigned int timeCost, unsigned int nPARALLEL, unsigned int N_COLS);
 
-//---- Misc
-void printArray(unsigned char *array, unsigned int size, char *name);
-
 #endif /* SPONGE_H_ */

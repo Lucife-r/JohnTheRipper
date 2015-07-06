@@ -12,123 +12,124 @@
 // one may use the parameters: m_cost = 15; t_cost = 0; (256 MegaByte memory)
 
 
-#define F0(i)  {               \
-    i0 = ((i) - 0*4)  & mask1; \
-    i1 = ((i) - 2*4)  & mask1; \
-    i2 = ((i) - 3*4)  & mask1; \
-    i3 = ((i) - 7*4)  & mask1; \
-    i4 = ((i) - 13*4) & mask1; \
-    v=vload4(0,S+sMAP(i0));      \
-    v1=vload4(0,S+sMAP(i1));      \
-    v2=vload4(0,S+sMAP(i2));      \
-    v3=vload4(0,S+sMAP(i3));      \
-    v4=vload4(0,S+sMAP(i4));      \
-    v= ((v1^v2)+v3)^v4; \
-    v=(ulong4)(v.w,v.xyz);          \
-    v= v<<17 | v >>47; \
-    vstore4(v,0,S+sMAP(i0)); \
+#define F0(i)  {		\
+    i0 = ((i) - 0*4)  & mask1;	\
+    i1 = ((i) - 2*4)  & mask1;	\
+    i2 = ((i) - 3*4)  & mask1;	\
+    i3 = ((i) - 7*4)  & mask1;	\
+    i4 = ((i) - 13*4) & mask1;	\
+    v=vload4(0,S+sMAP(i0));	\
+    v1=vload4(0,S+sMAP(i1));	\
+    v2=vload4(0,S+sMAP(i2));	\
+    v3=vload4(0,S+sMAP(i3));	\
+    v4=vload4(0,S+sMAP(i4));	\
+    v= ((v1^v2)+v3)^v4;		\
+    v=(ulong4)(v.w,v.xyz);	\
+    v= v<<17 | v >>47;		\
+    vstore4(v,0,S+sMAP(i0));	\
 }
 
-#define F(i)  {                \
-    i0 = ((i) - 0*4)  & mask1; \
-    i1 = ((i) - 2*4)  & mask1; \
-    i2 = ((i) - 3*4)  & mask1; \
-    i3 = ((i) - 7*4)  & mask1; \
-    i4 = ((i) - 13*4) & mask1; \
-\
-    v=vload4(0,S+sMAP(i0));      \
-    v1=vload4(0,S+sMAP(i1));      \
-    v2=vload4(0,S+sMAP(i2));      \
-    v3=vload4(0,S+sMAP(i3));      \
-    v4=vload4(0,S+sMAP(i4));      \
-    v= v+(((v1^v2)+v3)^v4); \
-\
-    v=(ulong4)(v.w,v.x,v.y,v.z);   \
-\
-    v= v<<17 | v >>47; \
-    vstore4(v,0,S+sMAP(i0)); \
-}
-#define G(i,random_number)  {                                                       \
-    index_global = ((random_number >> 16) & mask) << 2;                             \
-    for (j = 0; j < 128; j = j+4)                                                   \
-    {                                                                               \
-        F(i+j);                                                                     \
-        index_global   = (index_global + 4) & mask1;                                      \
-        index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
-        index_local    = index_local << 2;                                                \
-\
-	if(i0==index_local) \
-	{ \
-    	v= v+(v<<1); \
-	v=v+(v<<2); 			\
-	vstore4(v,0,S+sMAP(i0));               \
-	} \
-	else \
-	{ \
-	v1=vload4(0,S+sMAP(index_local));   	\
-    	v= v+(v1<<1); \
-	v1=v1+(v<<2); 			\
-	vstore4(v1,0,S+sMAP(index_local));               \
-	} \
-\
-	if(i0==index_global) \
-	{	\
-    	v= v+(v<<1); \
-	v=v+(v<<3); 			\
-	vstore4(v,0,S+sMAP(i0));               \
-	}	\
-	else	\
-	{\
-	v1=vload4(0,S+sMAP(index_global));   	\
-    	v= v+(v1<<1); \
-	v1=v1+(v<<3); 			\
-	vstore4(v1,0,S+sMAP(index_global));               \
-	} \
-	vstore4(v,0,S+sMAP(i0));\
-        random_number += (random_number << 2);                                      \
-        random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;   \
-    }                                                                               \
+#define F(i)  {			\
+    i0 = ((i) - 0*4)  & mask1;	\
+    i1 = ((i) - 2*4)  & mask1;	\
+    i2 = ((i) - 3*4)  & mask1;	\
+    i3 = ((i) - 7*4)  & mask1;	\
+    i4 = ((i) - 13*4) & mask1;	\
+				\
+    v=vload4(0,S+sMAP(i0));	\
+    v1=vload4(0,S+sMAP(i1));	\
+    v2=vload4(0,S+sMAP(i2));	\
+    v3=vload4(0,S+sMAP(i3));	\
+    v4=vload4(0,S+sMAP(i4));	\
+    v= v+(((v1^v2)+v3)^v4);	\
+				\
+    v=(ulong4)(v.w,v.x,v.y,v.z);\
+				\
+    v= v<<17 | v >>47;		\
+    vstore4(v,0,S+sMAP(i0));	\
 }
 
-#define H(i, random_number)  {                                                      \
-    index_global = ((random_number >> 16) & mask) << 2;                             \
-    for (j = 0; j < 128; j = j+4)                                                   \
-    {                                                                               \
-        F(i+j);                                                                     \
-        index_global   = (index_global + 4) & mask1;                                      \
-        index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;     \
-        index_local    = index_local << 2;                                                \
-\
-	if(i0==index_local) \
-	{\
-    	v= v+(v<<1); \
-	v=v+(v<<2); 			\
-	vstore4(v,0,S+sMAP(i0));               \
-	}\
-	else \
-	{ \
-	v1=vload4(0,S+sMAP(index_local));   	\
-    	v= v+(v1<<1); \
-	v1=v1+(v<<2); 			\
-	vstore4(v1,0,S+sMAP(index_local));               \
-	}\
-\
-	if(i0==index_global) \
-	{ \
-    	v= v+(v<<1); \
-	v=v+(v<<3); 			\
-	vstore4(v,0,S+sMAP(i0));               \
-	} \
-	else \
-	{ \
-	v1=vload4(0,S+sMAP(index_global));   	\
-    	v= v+(v1<<1); \
-	v1=v1+(v<<3); 			\
-	vstore4(v1,0,S+sMAP(index_global));               \
-	}\
-	vstore4(v,0,S+sMAP(i0));               \
-        random_number  = S[sMAP(i3)];              \
-    }                                        \
+#define G(i,random_number)  {										\
+    index_global = ((random_number >> 16) & mask) << 2;							\
+    for (j = 0; j < 128; j = j+4)									\
+    {													\
+        F(i+j);												\
+        index_global   = (index_global + 4) & mask1;							\
+        index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;			\
+        index_local    = index_local << 2;								\
+													\
+	if(i0==index_local)										\
+	{												\
+    	v= v+(v<<1);											\
+	v=v+(v<<2);											\
+	vstore4(v,0,S+sMAP(i0));									\
+	}												\
+	else												\
+	{												\
+	v1=vload4(0,S+sMAP(index_local));								\
+    	v= v+(v1<<1);											\
+	v1=v1+(v<<2);											\
+	vstore4(v1,0,S+sMAP(index_local));								\
+	}												\
+													\
+	if(i0==index_global)										\
+	{												\
+    	v= v+(v<<1);											\
+	v=v+(v<<3);											\
+	vstore4(v,0,S+sMAP(i0));									\
+	}												\
+	else												\
+	{												\
+	v1=vload4(0,S+sMAP(index_global));								\
+    	v= v+(v1<<1);											\
+	v1=v1+(v<<3);											\
+	vstore4(v1,0,S+sMAP(index_global));								\
+	}												\
+	vstore4(v,0,S+sMAP(i0));									\
+        random_number += (random_number << 2);								\
+        random_number  = (random_number << 19) ^ (random_number >> 45)  ^ 3141592653589793238UL;	\
+    }													\
+}
+
+#define H(i, random_number)  {								\
+    index_global = ((random_number >> 16) & mask) << 2;					\
+    for (j = 0; j < 128; j = j+4)							\
+    {											\
+        F(i+j);										\
+        index_global   = (index_global + 4) & mask1;					\
+        index_local    = (((i + j) >> 2) - 0x1000 + (random_number & 0x1fff)) & mask;	\
+        index_local    = index_local << 2;						\
+											\
+	if(i0==index_local)								\
+	{										\
+    	v= v+(v<<1);									\
+	v=v+(v<<2);									\
+	vstore4(v,0,S+sMAP(i0));							\
+	}										\
+	else										\
+	{										\
+	v1=vload4(0,S+sMAP(index_local));						\
+    	v= v+(v1<<1);									\
+	v1=v1+(v<<2);									\
+	vstore4(v1,0,S+sMAP(index_local));						\
+	}										\
+											\
+	if(i0==index_global)								\
+	{										\
+    	v= v+(v<<1);									\
+	v=v+(v<<3);									\
+	vstore4(v,0,S+sMAP(i0));							\
+	}										\
+	else										\
+	{										\
+	v1=vload4(0,S+sMAP(index_global));						\
+    	v= v+(v1<<1);									\
+	v1=v1+(v<<3);									\
+	vstore4(v1,0,S+sMAP(index_global));						\
+	}										\
+	vstore4(v,0,S+sMAP(i0));							\
+        random_number  = S[sMAP(i3)];							\
+    }											\
 }
 
 #define MAP(X) (((X)/4*4)*GID+gid4+(X)%4)
@@ -138,10 +139,10 @@
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
 
-// BINARY_SIZE, SALT_SIZE, MEM_SIZE, T_COST and M_COST is passed with -D during build
+// BINARY_SIZE, SALT_SIZE is passed with -D during build
 
 struct pomelo_salt {
-	unsigned int t_cost,m_cost;
+	unsigned int t_cost, m_cost;
 	unsigned int hash_size;
 	unsigned int salt_length;
 	char salt[SALT_SIZE];
@@ -150,8 +151,7 @@ struct pomelo_salt {
 __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
-    __global struct pomelo_salt *salt,
-    __global unsigned long *S)
+    __global struct pomelo_salt *salt, __global unsigned long *S)
 {
 	unsigned long gid4;
 

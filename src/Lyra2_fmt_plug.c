@@ -359,7 +359,7 @@ static void set_salt(void *salt)
 		}
 	}
 
-	alloc=0;
+	alloc=1;
 }
 
 static int cmp_all(void *binary, int count)

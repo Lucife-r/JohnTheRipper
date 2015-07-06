@@ -15,8 +15,6 @@ john_register_one(&fmt_opencl_pomelo);
 #else
 
 #include <string.h>
-
-#include "path.h"
 #include "arch.h"
 #include "misc.h"
 #include "common.h"
@@ -77,7 +75,6 @@ static size_t key_offset, idx_offset;
 static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memory;
 static cl_mem pinned_key, pinned_idx, pinned_result,
     pinned_memory, pinned_salt;
-static int partial_output;
 static char *output, *memory;
 static unsigned long long int MEM_SIZE;
 static unsigned short cm_cost;
@@ -291,7 +288,7 @@ static void reset_(unsigned short M_COST)
 	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
 
 	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 1000, 10000);
+	autotune_run(self, 1, 0, 10000);
 }
 
 static void reset(struct db_main *db)
@@ -521,7 +518,6 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
 		multi_profilingEvent[4]), "failed in reading data back");
-	partial_output = 1;
 
 
 	return count;
