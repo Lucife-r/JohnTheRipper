@@ -59,6 +59,12 @@ john_register_one(&fmt_pomelo);
 #define OMP_SCALE 16
 #endif
 
+#ifdef _OPENMP
+#define THREAD_NUMBER omp_get_thread_num()
+#else
+#define THREAD_NUMBER 1
+#endif
+
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
 	{"$POMELO$2$2$salt$CBA3E72A1F3CAD74AE0E33F353787E82E1D808C65908B2EA57BA5BDD435D3BC645937A1772D1AA18D91D7164616B010810C359B04F4FFA58E60C04C6B8A095DE4500C18CD815A8960E54B0777A3279485EC559BE34D5DBFBF2A66BA61F386FC8896A18D8", "pass"},
@@ -291,7 +297,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
 		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
-		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, &allocated[omp_get_thread_num()%threads]);
+		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, &allocated[THREAD_NUMBER%threads]);
 	}
 	return count;
 }
