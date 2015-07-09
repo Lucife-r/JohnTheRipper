@@ -312,4 +312,18 @@ void alter_endianity_w64(void *x, unsigned int count);
 #endif
 #endif
 
+/**
+ * Internal type used by the memory allocator.  Please do not use it directly.
+ * Use yescrypt_shared_t and yescrypt_local_t as appropriate instead, since
+ * they might differ from each other in a future version.
+ */
+typedef struct {
+	void * base, * aligned;
+	size_t base_size, aligned_size;
+} region_t;
+
+void * alloc_region(region_t * region, size_t size);
+void init_region(region_t * region);
+int free_region(region_t * region);
+
 #endif
