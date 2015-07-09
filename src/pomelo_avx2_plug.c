@@ -85,7 +85,7 @@
 
 
 int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct pomelo_allocation *allocated)
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, void *memory)
 {
 	uint64_t i, j;
 	uint64_t i0, i1, i2, i3, i4;
@@ -100,7 +100,7 @@ int POMELO_AVX2(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (__m256i *) allocated->buffer;	// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
+	S = (__m256i *) memory;			// aligned malloc is needed; otherwise it is only aligned to 16 bytes when using GCC.        
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32
 
 	//Step 2: Load the password, salt, input/output sizes into the state S

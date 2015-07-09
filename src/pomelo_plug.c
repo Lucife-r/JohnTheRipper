@@ -9,11 +9,14 @@
 // For the machine today, it is recommended that: 5 <= t_cost + m_cost <= 25;   
 // one may use the parameters: m_cost = 15; t_cost = 0; (256 MegaByte memory)    
 
+#include "pomelo.h"
+
+#if defined(SIMD_COEF_64) && !defined(__AVX2__)
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <inttypes.h>
-#include "pomelo.h"
 
 #define F0(i)  {               \
     i0 = ((i) - 0*4)  & mask1; \
@@ -110,7 +113,7 @@
 }
 
 int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct pomelo_allocation *allocated)
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, void *memory)
 {
 	uint64_t i, j, temp;
 	uint64_t i0, i1, i2, i3, i4;
@@ -125,7 +128,7 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (uint64_t *) allocated->buffer;
+	S = (uint64_t *) memory;
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1ULL << (10 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/8; 
 
@@ -174,3 +177,5 @@ int POMELO(void *out, size_t outlen, const void *in, size_t inlen,
 
 	return 0;
 }
+
+#endif //#if defined(SIMD_COEF_64) && !defined(__AVX2__)

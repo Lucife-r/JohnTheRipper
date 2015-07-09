@@ -80,8 +80,8 @@ struct pomelo_salt {
 	char salt[SALT_SIZE];
 };
 
-static struct pomelo_salt saved_salt;
-static struct pomelo_allocation *allocated;
+struct pomelo_salt saved_salt;
+static region_t * memory;
 
 static char *saved_key;
 static int threads;
@@ -89,10 +89,9 @@ int prev_m_cost;
 
 static unsigned char *crypted;
 
-static void free_allocated();
-
 static void init(struct fmt_main *self)
 {
+	int i;
 #ifdef _OPENMP
 	int omp_t = omp_get_max_threads();
 	threads=omp_get_max_threads();
@@ -109,14 +108,19 @@ static void init(struct fmt_main *self)
 	crypted = malloc(self->params.max_keys_per_crypt * (BINARY_SIZE));
 	memset(crypted, 0, self->params.max_keys_per_crypt * (BINARY_SIZE));
 
-	prev_m_cost=-1;
+	memory=malloc(threads*sizeof(region_t));
+	for(i=0;i<threads;i++)
+		init_region(&memory[i]);
 }
 
 static void done(void)
 {
-	free_allocated();
+	int i;
 	free(saved_key);
 	free(crypted);
+	for(i=0;i<threads;i++)
+		free_region(&memory[i]);
+	free(memory);
 }
 
 static int valid(char *ciphertext, struct fmt_main *self)
@@ -222,26 +226,12 @@ static void *get_salt(char *ciphertext)
 }
 
 
-static void free_allocated()
-{
-	int i;
-
-	if(prev_m_cost==-1)
-		return;
-
-	for(i=0;i<threads;i++)
-	{
-		free(allocated[i].alloc); 
-	}
-	free(allocated);
-}
-
 static void set_salt(void *salt)
 {
-	int i;
-	size_t mem_size;
+	/*int i;
+	size_t mem_size;*/
 	memcpy(&saved_salt,salt,sizeof(struct pomelo_salt));
-	if(prev_m_cost>=(int)saved_salt.m_cost)
+	/*if(prev_m_cost>=(int)saved_salt.m_cost)
 		return;
 	mem_size= 1ULL << (13 + saved_salt.m_cost);
 	free_allocated();
@@ -253,7 +243,7 @@ static void set_salt(void *salt)
 		allocated[i].buffer=allocated[i].alloc;
 		while((size_t)allocated[i].buffer%ALIGN)
 			allocated[i].buffer++;
-	}
+	}*/
 }
 
 static int cmp_all(void *binary, int count)
@@ -278,6 +268,22 @@ static int cmp_exact(char *source, int index)
 	return 1;
 }
 
+static void pomelo(void *out, size_t outlen, const void *in, size_t inlen,
+    const void *salt, size_t saltlen, unsigned int t_cost,
+    unsigned int m_cost, region_t *memory)
+{
+	size_t mem_size= 1ULL << (13 + m_cost);
+	alloc_region(memory,mem_size);
+#ifdef __AVX2__
+	POMELO_AVX2
+#elif defined(SIMD_COEF_64)
+	POMELO_SSE2
+#else
+	POMELO
+#endif
+		(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, memory->aligned);
+}
+
 static int crypt_all(int *pcount, struct db_salt *salt)
 {
 	int i;
@@ -287,17 +293,11 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 #pragma omp parallel for
 #endif
 	for (i = 0; i < count; i++) {
-#ifdef __AVX2__
-		POMELO_AVX2
-#elif defined(SIMD_COEF_64)
-		POMELO_SSE2
-#else
-		POMELO
-#endif
+		pomelo
 		    (crypted + i * BINARY_SIZE, saved_salt.hash_size,
 		    saved_key + i * (PLAINTEXT_LENGTH + 1),
 		    strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), saved_salt.salt,
-		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, &allocated[THREAD_NUMBER%threads]);
+		    saved_salt.salt_length, saved_salt.t_cost, saved_salt.m_cost, &memory[THREAD_NUMBER%threads]);
 	}
 	return count;
 }

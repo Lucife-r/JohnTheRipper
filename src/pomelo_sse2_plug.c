@@ -12,7 +12,7 @@
 
 #include "pomelo.h"
 
-#ifdef SIMD_COEF_64
+#if defined(SIMD_COEF_64) && !defined(__AVX2__)
 
 #include <stdlib.h>
 #include <string.h>
@@ -102,7 +102,7 @@
 
 
 int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
-    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, struct pomelo_allocation *allocated)
+    const void *salt, size_t saltlen, unsigned int t_cost, unsigned int m_cost, void *memory)
 {
 	uint64_t i, j;
 	__m128i temp;
@@ -118,7 +118,7 @@ int POMELO_SSE2(void *out, size_t outlen, const void *in, size_t inlen,
 
 	//Step 1: Initialize the state S          
 	state_size = 1ULL << (13 + m_cost);	// state size is 2**(13+m_cost) bytes 
-	S = (__m128i *) allocated->buffer;
+	S = (__m128i *) memory;
 	mask = (1ULL << (8 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1ULL << (9 + m_cost)) - 1;	// mask is used for modulation: modulo size_size/16; 
 
