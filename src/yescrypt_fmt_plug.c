@@ -27,12 +27,14 @@ john_register_one(&fmt_yescrypt);
 #define FORMAT_LABEL			"yescrypt"
 #define FORMAT_NAME			""
 
-#ifdef __AVX2__
-#define ALGORITHM_NAME			"AVX2"
-#elif defined(SIMD_COEF_64)
-#define ALGORITHM_NAME			"SSE2"
+#ifdef __XOP__
+#define ALGORITHM_NAME			"Salsa20/8 XOP"
+#elif defined(__AVX__)
+#define ALGORITHM_NAME			"Salsa20/8 AVX"
+#elif defined(__SSE2__)
+#define ALGORITHM_NAME			"Salsa20/8 SSE2"
 #else
-#define ALGORITHM_NAME			" "
+#define ALGORITHM_NAME			"Salsa20/8"
 #endif
 
 #define BENCHMARK_COMMENT		""

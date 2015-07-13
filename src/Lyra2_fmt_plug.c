@@ -28,11 +28,7 @@ john_register_one(&fmt_lyra2);
 #define FORMAT_LABEL			"Lyra2"
 #define FORMAT_NAME			""
 
-#ifdef SIMD_COEF_64
-#define ALGORITHM_NAME			"Blake2/SSE2"
-#else
-#define ALGORITHM_NAME			"Blake2"
-#endif
+#define ALGORITHM_NAME			"Blake2" LYRA2_SIMD
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0

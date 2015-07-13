@@ -24,11 +24,13 @@ john_register_one(&fmt_pomelo);
 #endif
 
 #define FORMAT_LABEL			"POMELO"
-#define FORMAT_NAME			"Generic pomelo"
+#define FORMAT_NAME			""
 
 #ifdef __AVX2__
 #define ALGORITHM_NAME			"AVX2"
-#elif defined(SIMD_COEF_64)
+#elif defined(AVX)
+#define ALGORITHM_NAME			"AVX"
+#elif defined(__SSE2__)
 #define ALGORITHM_NAME			"SSE2"
 #else
 #define ALGORITHM_NAME			" "

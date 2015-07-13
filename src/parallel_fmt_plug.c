@@ -24,9 +24,9 @@ john_register_one(&fmt_parallel);
 #endif
 
 #define FORMAT_LABEL			"parallel"
-#define FORMAT_NAME			"parallel SHA-512"
+#define FORMAT_NAME			""
 
-#define ALGORITHM_NAME			" "
+#define ALGORITHM_NAME			"SHA-512"
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0

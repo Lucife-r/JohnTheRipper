@@ -25,7 +25,7 @@ john_register_one(&cuda_fmt_lyra2);
 
 #define FORMAT_LABEL			"Lyra2-cuda"
 #define FORMAT_NAME			""
-#define ALGORITHM_NAME			"Lyra2 CUDA"
+#define ALGORITHM_NAME			"Blake2 CUDA (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		-1

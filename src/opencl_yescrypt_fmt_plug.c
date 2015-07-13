@@ -25,7 +25,7 @@ john_register_one(&fmt_opencl_yescrypt);
 
 #define FORMAT_LABEL            "yescrypt-opencl"
 #define FORMAT_NAME             ""
-#define ALGORITHM_NAME          "OpenCL (inefficient, development use only)"
+#define ALGORITHM_NAME          "Salsa20/8 OpenCL (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT       ""
 #define BENCHMARK_LENGTH        0

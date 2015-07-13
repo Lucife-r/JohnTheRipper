@@ -23,8 +23,8 @@ john_register_one(&fmt_opencl_pomelo);
 #include "common-opencl.h"
 
 #define FORMAT_LABEL            "pomelo-opencl"
-#define FORMAT_NAME             "POMELO"
-#define ALGORITHM_NAME          "POMELO OpenCL (inefficient, development use only)"
+#define FORMAT_NAME             ""
+#define ALGORITHM_NAME          "OpenCL (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT       ""
 #define BENCHMARK_LENGTH        0

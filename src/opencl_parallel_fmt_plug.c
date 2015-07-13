@@ -24,9 +24,9 @@ john_register_one(&fmt_opencl_parallel);
 #include "opencl_device_info.h"
 
 #define FORMAT_LABEL			"parallel-opencl"
-#define FORMAT_NAME			"parallel SHA-512"
+#define FORMAT_NAME			""
 
-#define ALGORITHM_NAME			" "
+#define ALGORITHM_NAME			"SHA-512 Opencl"
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0

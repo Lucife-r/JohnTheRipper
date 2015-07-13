@@ -25,7 +25,7 @@ john_register_one(&fmt_opencl_lyra2);
 
 #define FORMAT_LABEL            "Lyra2-opencl"
 #define FORMAT_NAME             ""
-#define ALGORITHM_NAME          "Lyra2 OpenCL (inefficient, development use only)"
+#define ALGORITHM_NAME          "Blake2 OpenCL (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT	""
 #define BENCHMARK_LENGTH	-1
