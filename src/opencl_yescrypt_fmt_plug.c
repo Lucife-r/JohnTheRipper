@@ -30,7 +30,7 @@ john_register_one(&fmt_opencl_yescrypt);
 #define BENCHMARK_COMMENT       ""
 #define BENCHMARK_LENGTH        0
 
-#define SETTING 		4 + 1 + 5 + 5 + BYTES2CHARS(32) + 1
+#define SETTING 		(4 + 1 + 5 + 5 + BYTES2CHARS(32) + 1)
 #define HASH_SIZE		(HASH_LEN + 1)
 
 #define PLAINTEXT_LENGTH        125
