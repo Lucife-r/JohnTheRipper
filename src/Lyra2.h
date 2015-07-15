@@ -37,6 +37,7 @@
 #endif
 
 #include <pthread.h>
+#include "memory.h"
 
 typedef unsigned char byte ;
 
@@ -46,24 +47,16 @@ extern int nCols_is_2_power;
 struct lyra2_allocation{
     uint64_t **memMatrix;
     unsigned char **pKeys;
-    uint64_t **threadSliceMatrix;
+    region_t *threadSliceMatrix;
     unsigned char **threadKey;
     uint64_t **threadState;
 
-    int64_t *gap;                //Modifier to the step, assuming the values 1 or -1
-    uint64_t *step;              //Visitation step (used during Setup and Wandering phases)
-    uint64_t *window;            //Visitation window (used to define which rows can be revisited during Setup)
-    uint64_t *sync;              //Synchronize counter
-    uint64_t *sqrt;              //Square of window (i.e., square(window)), when a window is a square number;
     uint64_t *row0;              //row0: sequentially written during Setup; randomly picked during Wandering
     uint64_t *prev0;             //prev0: stores the previous value of row0
     uint64_t *rowP;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
     uint64_t *prevP;             //prevP: stores the previous value of rowP
     uint64_t *jP;                //Starts with threadNumber.
     uint64_t *kP;
-    uint64_t *off0;
-    uint64_t *offP;
-    uint64_t *sliceStart;
     uint64_t **ptrWord;
 };
 
@@ -73,7 +66,7 @@ struct lyra2_allocation{
 struct lyra2_lm_allocation{
     uint64_t **memMatrix;
     unsigned char **pKeys;
-    uint64_t **threadSliceMatrix;
+    region_t *threadSliceMatrix;
     unsigned char **threadKey;
     uint64_t **threadState;
 };

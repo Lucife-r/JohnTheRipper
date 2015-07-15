@@ -49,6 +49,8 @@ john_register_one(&fmt_lyra2);
 
 #define OMP_SCALE			1
 
+#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
+
 static struct fmt_tests tests[] = {
 	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
 	{"$Lyra2$8$8$256$2$salt2$e61b2fc5a76d234c49188c2d6c234f5b5721382b127bea0177287bf5f765ec1a","password"},
@@ -81,6 +83,11 @@ int nCols_is_2_power;
 
 static void *get_salt(char *ciphertext);
 static void free_allocated();
+
+static unsigned long size(unsigned long s)
+{
+	return MAX(s,MEM_ALIGN_CACHE);
+}
 
 static void init(struct fmt_main *self)
 {
@@ -251,25 +258,17 @@ static void free_allocated()
 		free(allocated[i].memMatrix); 
 		free(allocated[i].pKeys);
 
-		free(allocated[i].gap);
-		free(allocated[i].step);
-		free(allocated[i].window);
-		free(allocated[i].sync);
-		free(allocated[i].sqrt);
 		free(allocated[i].row0);
 		free(allocated[i].prev0);
 		free(allocated[i].rowP);
 		free(allocated[i].prevP);
 		free(allocated[i].jP);
 		free(allocated[i].kP);
-		free(allocated[i].off0);
-		free(allocated[i].offP);
-		free(allocated[i].sliceStart);
 		free(allocated[i].ptrWord);
 	
 		for(threadNumber=0;threadNumber<prev_saved_salt.nThreads;threadNumber++)
 		{
-			free(allocated[i].threadSliceMatrix[threadNumber]);
+			free_region(&(allocated[i].threadSliceMatrix[threadNumber]));
 			free(allocated[i].threadKey[threadNumber]);
 			free(allocated[i].threadState[threadNumber]);
 		}
@@ -283,7 +282,7 @@ static void free_allocated()
 
 static int is_power_of2(unsigned int x)
 {
-	int i=1;
+	unsigned int i=1;
 	while(i<=x)
 	{
 		if (i==x)
@@ -302,7 +301,7 @@ static void set_salt(void *salt)
 	memcpy(&saved_salt,salt,sizeof(struct lyra2_salt));
 	N_COLS=saved_salt.nCols;
 
-	if(prev_saved_salt.m_cost==saved_salt.m_cost && prev_saved_salt.nThreads==saved_salt.nThreads)
+	if(prev_saved_salt.m_cost==saved_salt.m_cost && prev_saved_salt.nThreads==saved_salt.nThreads && prev_saved_salt.nCols==saved_salt.nCols)
 		return;
 
 	nCols_is_2_power=is_power_of2(N_COLS);
@@ -314,47 +313,40 @@ static void set_salt(void *salt)
 
 	for(i=0;i<threads;i++)
 	{
-		allocated[i].memMatrix = malloc(saved_salt.m_cost * sizeof (uint64_t*));
+		allocated[i].memMatrix = malloc(size(saved_salt.m_cost * sizeof (uint64_t*)));
     		if (allocated[i].memMatrix == NULL) {
 			exit(1);
 		}
-		allocated[i].pKeys = malloc(saved_salt.nThreads * sizeof (unsigned char*));
+		allocated[i].pKeys = malloc(size(saved_salt.nThreads * sizeof (unsigned char*)));
 		if (allocated[i].pKeys == NULL) {
         		exit(1);
 		}
-		allocated[i].gap=malloc(sizeof(int64_t)*saved_salt.nThreads);
-		allocated[i].step=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].window=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].sync=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].sqrt=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].row0=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].prev0=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].rowP=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].prevP=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].jP=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].kP=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].off0=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].offP=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].sliceStart=malloc(sizeof(uint64_t)*saved_salt.nThreads);
-		allocated[i].ptrWord=malloc(sizeof(void *)*saved_salt.nThreads);
+		allocated[i].row0=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].prev0=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].rowP=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].prevP=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].jP=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].kP=malloc(size(sizeof(uint64_t)*saved_salt.nThreads));
+		allocated[i].ptrWord=malloc(size(sizeof(void *)*saved_salt.nThreads));
 
-		allocated[i].threadSliceMatrix=malloc(sizeof(void *)*saved_salt.nThreads);
-		allocated[i].threadKey=malloc(sizeof(void *)*saved_salt.nThreads);
-		allocated[i].threadState=malloc(sizeof(void *)*saved_salt.nThreads);
+		allocated[i].threadSliceMatrix=malloc(size(sizeof(region_t)*saved_salt.nThreads));
+		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
+		{
+			init_region(&(allocated[i].threadSliceMatrix[threadNumber]));
+		}
+		allocated[i].threadKey=malloc(size(sizeof(void *)*saved_salt.nThreads));
+		allocated[i].threadState=malloc(size(sizeof(void *)*saved_salt.nThreads));
 
 		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
 		{
-			allocated[i].threadSliceMatrix[threadNumber] = malloc(iP);
-			if (allocated[i].threadSliceMatrix[threadNumber] == NULL) {
-        			exit(1);
-			}
+			alloc_region(&(allocated[i].threadSliceMatrix[threadNumber]),iP);
 
-			allocated[i].threadKey[threadNumber] =  malloc(saved_salt.hash_size);
+			allocated[i].threadKey[threadNumber] =  malloc(size(BINARY_SIZE));
 			if (allocated[i].threadKey[threadNumber] == NULL) {
         			exit(1);
 			}
 
-			allocated[i].threadState[threadNumber] = malloc(16 * sizeof (uint64_t));
+			allocated[i].threadState[threadNumber] = malloc(size(16 * sizeof (uint64_t)));
 			if (allocated[i].threadState[threadNumber] == NULL) {
         			exit(1);
 			}

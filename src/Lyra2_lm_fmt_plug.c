@@ -251,7 +251,7 @@ static void free_allocated()
 		pthread_barrier_destroy(&barrier[i]);
 		for(threadNumber=0;threadNumber<prev_saved_salt.nThreads;threadNumber++)
 		{
-			free(allocated[i].threadSliceMatrix[threadNumber]);
+			free_region(&(allocated[i].threadSliceMatrix[threadNumber]));
 			free(allocated[i].threadKey[threadNumber]);
 			free(allocated[i].threadState[threadNumber]);
 		}
@@ -265,7 +265,7 @@ static void free_allocated()
 
 static int is_power_of2(unsigned int x)
 {
-	int i=1;
+	unsigned int i=1;
 	while(i<=x)
 	{
 		if (i==x)
@@ -282,6 +282,9 @@ static void set_salt(void *salt)
 
 	prev_saved_salt=saved_salt;
 	memcpy(&saved_salt,salt,sizeof(struct lyra2_salt));
+
+	if(prev_saved_salt.m_cost==saved_salt.m_cost && prev_saved_salt.nThreads==saved_salt.nThreads && prev_saved_salt.nCols==saved_salt.nCols)
+		return;
 	
 	N_COLS=saved_salt.nCols;
 	nCols_is_2_power=is_power_of2(N_COLS);
@@ -306,16 +309,17 @@ static void set_salt(void *salt)
         		exit(22);
 		}
 
-		allocated[i].threadSliceMatrix=malloc(sizeof(void *)*saved_salt.nThreads);
+		allocated[i].threadSliceMatrix=malloc(sizeof(region_t)*saved_salt.nThreads);
+		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
+		{
+			init_region(&(allocated[i].threadSliceMatrix[threadNumber]));
+		}
 		allocated[i].threadKey=malloc(sizeof(void *)*saved_salt.nThreads);
 		allocated[i].threadState=malloc(sizeof(void *)*saved_salt.nThreads);
 
 		for(threadNumber=0;threadNumber<saved_salt.nThreads;threadNumber++)
 		{
-			allocated[i].threadSliceMatrix[threadNumber] = malloc(iP);
-			if (allocated[i].threadSliceMatrix[threadNumber] == NULL) {
-        			exit(33);
-			}
+			alloc_region(&(allocated[i].threadSliceMatrix[threadNumber]),iP);
 
 			allocated[i].threadKey[threadNumber] =  malloc(saved_salt.hash_size);
 			if (allocated[i].threadKey[threadNumber] == NULL) {
@@ -357,7 +361,6 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 {
 	int i,remaining,prev;
 	const int count = *pcount;
-
 	for(remaining=count*saved_salt.nThreads,prev=0;remaining>0;remaining-=threads,prev+=MIN(remaining,threads))
 	{
 #pragma omp parallel for

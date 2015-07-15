@@ -116,7 +116,7 @@ int LYRA2_LM_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned
     //========== Initializing the Memory Matrix and pointers to it =============//
     //Tries to allocate enough space for the whole memory matrix
     i = (uint64_t) ((uint64_t) nRows * (uint64_t) (BLOCK_LEN_INT64 * nCols * 8));
-    wholeMatrix = (BUFF_TYPE *) allocated->threadSliceMatrix[0];
+    wholeMatrix = (BUFF_TYPE *) allocated->threadSliceMatrix[0].aligned;
     //Allocates pointers to each row of the matrix
     memMatrix = (BUFF_TYPE **) allocated->memMatrix;
 
@@ -347,7 +347,7 @@ int LYRA2_LM_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, 
         sliceStart = threadNumber*sizeSlicedRows;
         halfSlice = sizeSlicedRows/2;
 
-        threadSliceMatrix = (BUFF_TYPE*) allocated->threadSliceMatrix[threadNumber];
+        threadSliceMatrix = (BUFF_TYPE*) allocated->threadSliceMatrix[threadNumber].aligned;
 
         //Places the pointers in the correct positions
         ptrWord = threadSliceMatrix;
@@ -442,7 +442,6 @@ int LYRA2_LM_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, 
         reducedDuplexRow1and2(threadState, memMatrix[sliceStart + 1], memMatrix[sliceStart + 2]);
 
         jP = threadNumber;
-	//printf("qwe\n");
         
         //Filling Loop
         for (row0 = 3; row0 < sizeSlicedRows; row0++) {
@@ -611,7 +610,7 @@ int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned in
     //========== Initializing the Memory Matrix and pointers to it =============//
     //Tries to allocate enough space for the whole memory matrix
     i = (uint64_t) ((uint64_t) nRows * (uint64_t) (BLOCK_LEN_INT64 * nCols * 8));
-    wholeMatrix = (BUFF_TYPE*) allocated->threadSliceMatrix[0];
+    wholeMatrix = (BUFF_TYPE*) allocated->threadSliceMatrix[0].aligned;
     //Allocates pointers to each row of the matrix
     memMatrix = (BUFF_TYPE**) allocated->memMatrix;
 
@@ -757,10 +756,6 @@ int LYRA2_for_nThreads1(void *K, unsigned int kLen, const void *pwd, unsigned in
     
     //Squeezes the key with the full-round sponge
     squeeze(state, K, kLen);
-    
-    //==========================================================================/
-    memset(state, 0, 16 * sizeof (uint64_t));
-    //==========================================================================/
 
     return 0;
 }
@@ -792,7 +787,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     //================================= Buffers ================================//
     BUFF_TYPE **memMatrix;
     unsigned char **pKeys;
-    BUFF_TYPE **threadSliceMatrix = (BUFF_TYPE**) allocated->threadSliceMatrix;
     unsigned char **threadKey = allocated->threadKey;
     BUFF_TYPE **threadState = (BUFF_TYPE**) allocated->threadState;
     //==========================================================================/
@@ -802,31 +796,28 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
     uint64_t threadNumber;
     uint64_t halfSlice ;
 
-    int64_t *gap=allocated->gap;                //Modifier to the step, assuming the values 1 or -1
-    uint64_t *step=allocated->step;              //Visitation step (used during Setup and Wandering phases)
-    uint64_t *window=allocated->window;            //Visitation window (used to define which rows can be revisited during Setup)
-    uint64_t *sync=allocated->sync;              //Synchronize counter
-    uint64_t *sqrt=allocated->sqrt;              //Square of window (i.e., square(window)), when a window is a square number;
-                                        //otherwise, sqrt = 2*square(window/2) 
+    int64_t gap=1;                              //Modifier to the step, assuming the values 1 or -1
+    uint64_t step=1;                            //Visitation step (used during Setup and Wandering phases)
+    uint64_t window=2;                          //Visitation window (used to define which rows can be revisited during Setup)
+    uint64_t sync=4;                            //Synchronize counter
+    uint64_t sqrt=2;                            //Square of window (i.e., square(window)), when a window is a square number;
+                                                //otherwise, sqrt = 2*square(window/2) 
           
 
     uint64_t *row0=allocated->row0;              //row0: sequentially written during Setup; randomly picked during Wandering
-    uint64_t *prev0=allocated->prev0;             //prev0: stores the previous value of row0
+    uint64_t *prev0=allocated->prev0;            //prev0: stores the previous value of row0
     uint64_t *rowP=allocated->rowP;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
-    uint64_t *prevP=allocated->prevP;             //prevP: stores the previous value of rowP
+    uint64_t *prevP=allocated->prevP;            //prevP: stores the previous value of rowP
 
 
-    uint64_t *jP=allocated->jP;                     //Starts with threadNumber.
-    uint64_t *kP=allocated->kP;
+    uint64_t *jP=allocated->jP;                  //Starts with threadNumber.
+    uint64_t kP;
     uint64_t wCont;
         
     uint64_t sizeSlicedRows;
-    uint64_t *off0=allocated->off0;
-    uint64_t *offP=allocated->offP;
+    uint64_t off0;
+    uint64_t offP;
     uint64_t row00;
-
-    uint64_t *sliceStart=allocated->sliceStart;
-
 
     BUFF_TYPE **ptrWord = (BUFF_TYPE**) allocated->ptrWord;
 
@@ -842,15 +833,6 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 
     for(i=0;i<nThreads;i++)
     {      
-
-	gap[i] = 1;                //Modifier to the step, assuming the values 1 or -1
-	step[i] = 1;              //Visitation step (used during Setup and Wandering phases)
-	window[i] = 2;            //Visitation window (used to define which rows can be revisited during Setup)
-	sync[i] = 4;              //Synchronize counter
-	sqrt[i] = 2;              //Square of window (i.e., square(window)), when a window is a square number;
-		                                //otherwise, sqrt = 2*square(window/2) 
-		  
-
 	row0[i] = 3;              //row0: sequentially written during Setup; randomly picked during Wandering
 	prev0[i] = 2;             //prev0: stores the previous value of row0
 	rowP[i] = 1;              //rowP: revisited during Setup, and then read [and written]; randomly picked during Wandering
@@ -865,14 +847,11 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
 	byte *ptrByte;
 	int p;
         //========================== BootStrapping Phase ==========================//
-	sliceStart[threadNumber] = threadNumber*sizeSlicedRows;
-
-	threadSliceMatrix[threadNumber] = (BUFF_TYPE*) allocated->threadSliceMatrix[threadNumber];
 
         //Places the pointers in the correct positions
-        ptrWord[threadNumber] = threadSliceMatrix[threadNumber];
-        for (kP[threadNumber] = 0; kP[threadNumber] < sizeSlicedRows; kP[threadNumber]++) { //to do
-            memMatrix[threadNumber*sizeSlicedRows + kP[threadNumber]] = ptrWord[threadNumber];
+        ptrWord[threadNumber] = allocated->threadSliceMatrix[threadNumber].aligned;
+        for (kP = 0; kP < sizeSlicedRows; kP++) { //to do
+            memMatrix[threadNumber*sizeSlicedRows + kP] = ptrWord[threadNumber];
             ptrWord[threadNumber] += ((BLOCK_LEN_INT * nCols));
         }
 
@@ -891,7 +870,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //First, we clean enough blocks for the password, salt, params and padding
         //Change the ''8'' if different amounts of parameters were passed 
         nBlocksInput = ((saltlen + pwdlen + 8 * sizeof (int)) / BLOCK_LEN_BLAKE2_SAFE_BYTES) + 1;
-        ptrByte = (byte*) threadSliceMatrix[threadNumber];
+        ptrByte = (byte*) allocated->threadSliceMatrix[threadNumber].aligned;
         memset(ptrByte, 0, nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES);
 
         //Prepends the password
@@ -923,7 +902,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         
         //Now comes the padding
         *ptrByte = 0x80;                                                //first byte of padding: right after the password
-        ptrByte = (byte*) threadSliceMatrix[threadNumber];                            //resets the pointer to the start of the memory matrix
+        ptrByte = (byte*) allocated->threadSliceMatrix[threadNumber].aligned;//resets the pointer to the start of the memory matrix
         ptrByte += nBlocksInput * BLOCK_LEN_BLAKE2_SAFE_BYTES - 1;      //sets the pointer to the correct position: end of incomplete block
         *ptrByte ^= 0x01;                                               //last byte of padding: at the end of the last incomplete block
         
@@ -941,8 +920,8 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //============= Absorbing the input data with the sponge ===============//
 
         //Absorbing salt, password and params: this is the only place in which the block length is hard-coded to 512 bits, for compatibility with Blake2b and BlaMka
-        ptrWord[threadNumber] = threadSliceMatrix[threadNumber];
-        for (kP[threadNumber] = 0; kP[threadNumber] < nBlocksInput; kP[threadNumber]++) {
+        ptrWord[threadNumber] = allocated->threadSliceMatrix[threadNumber].aligned;
+        for (kP = 0; kP < nBlocksInput; kP++) {
             absorbBlockBlake2Safe(threadState[threadNumber], ptrWord[threadNumber]);        //absorbs each block of pad(pwd || salt || params)
             ptrWord[threadNumber] += BLOCK_LEN_BLAKE2_SAFE_INT;             //goes to next block of pad(pwd || salt || params)
         }
@@ -953,11 +932,11 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //==Initializes a (nRows x nCols) memory matrix, it's cells having b bits each)==//
 
         //Initializes M[0]
-        reducedSqueezeRow0(threadState[threadNumber], memMatrix[sliceStart[threadNumber]]);               //The locally copied password is most likely overwritten here
+        reducedSqueezeRow0(threadState[threadNumber], memMatrix[threadNumber*sizeSlicedRows]);               //The locally copied password is most likely overwritten here
         //Initializes M[1]
-        reducedDuplexRow1and2(threadState[threadNumber], memMatrix[sliceStart[threadNumber]], memMatrix[sliceStart[threadNumber] + 1]);
+        reducedDuplexRow1and2(threadState[threadNumber], memMatrix[threadNumber*sizeSlicedRows], memMatrix[threadNumber*sizeSlicedRows + 1]);
         //Initializes M[2]
-        reducedDuplexRow1and2(threadState[threadNumber], memMatrix[sliceStart[threadNumber] + 1], memMatrix[sliceStart[threadNumber] + 2]);
+        reducedDuplexRow1and2(threadState[threadNumber], memMatrix[threadNumber*sizeSlicedRows + 1], memMatrix[threadNumber*sizeSlicedRows + 2]);
 
         jP[threadNumber] = threadNumber;
 	
@@ -970,7 +949,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             //Mj[rowP][col] = Mj[rowP][col] XOR rot(rand)                    rot(): right rotation by 'omega' bits (e.g., 1 or more words)
 	    
 	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
-            	reducedDuplexRowFilling(threadState[threadNumber], memMatrix[jP[threadNumber]*sizeSlicedRows + rowP[threadNumber]], memMatrix[sliceStart[threadNumber] + 			prev0[threadNumber]], memMatrix[jP[threadNumber]*sizeSlicedRows + prevP[threadNumber]], memMatrix[sliceStart[threadNumber] + row00]);
+            	reducedDuplexRowFilling(threadState[threadNumber], memMatrix[jP[threadNumber]*sizeSlicedRows + rowP[threadNumber]], memMatrix[threadNumber*sizeSlicedRows + 			prev0[threadNumber]], memMatrix[jP[threadNumber]*sizeSlicedRows + prevP[threadNumber]], memMatrix[threadNumber*sizeSlicedRows + row00]);
             
 	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
@@ -978,38 +957,35 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             	prev0[threadNumber] = row00;
             	prevP[threadNumber] = rowP[threadNumber];
 		//updates the value of rowP: deterministically picked, with a variable step
-		rowP[threadNumber] = (rowP[threadNumber] + step[threadNumber]) & (window[threadNumber] - 1);
-	    
-		//Checks if all rows in the window where visited.
-		if (rowP[threadNumber] == 0) 
-		{
-		    window[threadNumber] *= 2;                    //doubles the size of the re-visitation window
-		    step[threadNumber] = sqrt[threadNumber] + gap[threadNumber];              //changes the step: approximately doubles its value
-		    gap[threadNumber] = -gap[threadNumber];                     //inverts the modifier to the step
-		    if (gap[threadNumber] == -1){
-		            sqrt[threadNumber] *= 2;                  //Doubles sqrt every other iteration
-		    }
-		 }
+		rowP[threadNumber] = (rowP[threadNumber] + step) & (window - 1);	    		
 	    } 
-	    for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
+	    //Checks if all rows in the window where visited.
+	    if (rowP[0] == 0) 
+	    {
+	        window *= 2;                    //doubles the size of the re-visitation window
+	        step = sqrt + gap;              //changes the step: approximately doubles its value
+	        gap = -gap;                     //inverts the modifier to the step
+	        if (gap == -1){
+	            sqrt *= 2;                  //Doubles sqrt every other iteration
+	        }
+	    }
+	    if (row00 == sync)
 	    {
 		 //Synchronize threads and change the slices
-		 if (row00 == sync[threadNumber]) {
-		        sync[threadNumber] += sqrt[threadNumber]/2;                 //increment synchronize counter
+		 sync += sqrt/2;                 //increment synchronize counter
+		 for(threadNumber = 0; threadNumber<nThreads;threadNumber++) {
 		        jP[threadNumber] = (jP[threadNumber] + 1) % nThreads;      //change the visitation thread
 		 }
 	    } 
         } 
         
-        for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
-	{
-		//============================ Wandering Phase =============================//
-		//=====Iteratively overwrites pseudorandom cells of the memory matrix=======//
-		window[threadNumber] = halfSlice;
-		sync[threadNumber] = sqrt[threadNumber];
-		off0[threadNumber] = 0;
-		offP[threadNumber] = window[threadNumber];
-	}
+	//============================ Wandering Phase =============================//
+	//=====Iteratively overwrites pseudorandom cells of the memory matrix=======//
+	window = halfSlice;
+	off0 = 0;
+	offP = window;
+
+	sync = sqrt;
         
         //Visitation Loop
         for (wCont = 0; wCont < timeCost*sizeSlicedRows; wCont++){                
@@ -1022,35 +998,31 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
             for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
 	    {
 #ifdef SIMD_COEF_64
-		    row0[threadNumber] = off0[threadNumber] + (((uint64_t)(((__uint128_t *)threadState[threadNumber])[0])) % window[threadNumber]);             //row0 = off0 + (lsw(rand) mod window)
-		    rowP[threadNumber] = offP[threadNumber] + (((uint64_t)(((__uint128_t *)threadState[threadNumber])[1])) % window[threadNumber]);             //row1 = offP + (lsw(rot(rand)) mod window)
+		    row0[threadNumber] = off0 + (((uint64_t)(((__uint128_t *)threadState[threadNumber])[0])) % window);             //row0 = off0 + (lsw(rand) mod window)
+		    rowP[threadNumber] = offP + (((uint64_t)(((__uint128_t *)threadState[threadNumber])[1])) % window);             //row1 = offP + (lsw(rot(rand)) mod window)
 		    //Selects a pseudorandom indices j0 (LSW(rot^2 (rand)) mod p)
 		    jP[threadNumber] = ((uint64_t)(((__uint128_t *)threadState[threadNumber])[2])) % nThreads;                     //jP = lsw(rot^2(rand)) mod nPARALLEL
 #else
-		    row0[threadNumber] = off0[threadNumber] + (((uint64_t)threadState[threadNumber][0]) % window[threadNumber]);    //row0 = off0 + (lsw(rand) mod window)
-		    rowP[threadNumber] = offP[threadNumber] + (((uint64_t)threadState[threadNumber][2]) % window[threadNumber]);    //row1 = offP + (lsw(rot(rand)) mod window)
+		    row0[threadNumber] = off0 + (((uint64_t)threadState[threadNumber][0]) % window);    //row0 = off0 + (lsw(rand) mod window)
+		    rowP[threadNumber] = offP + (((uint64_t)threadState[threadNumber][2]) % window);    //row1 = offP + (lsw(rot(rand)) mod window)
 		    //Selects a pseudorandom indices jP 
                     jP[threadNumber] = ((uint64_t)threadState[threadNumber][4]) % nThreads;                        //jP = lsw(rot^2(rand)) mod nThreads
 #endif
                                                                               
                     //Performs a reduced-round duplexing operation over "Mi[row0][col] [+] Mj[rowP][col] [+] Mi[prev0][col0]", updating Mi[row0]
                     //Mi[row0][col] = Mi[row0][col] XOR rand; 
-                    reducedDuplexRowWanderingParallel(threadState[threadNumber], memMatrix[sliceStart[threadNumber] + row0[threadNumber]], memMatrix[jP 
-                                                      [threadNumber]*sizeSlicedRows + rowP[threadNumber]], memMatrix[sliceStart[threadNumber] + prev0[threadNumber]]);
+                    reducedDuplexRowWanderingParallel(threadState[threadNumber], memMatrix[threadNumber*sizeSlicedRows + row0[threadNumber]], memMatrix[jP 
+                                                      [threadNumber]*sizeSlicedRows + rowP[threadNumber]], memMatrix[threadNumber*sizeSlicedRows + prev0[threadNumber]]);
 
                     //update prev: they now point to the last rows ever updated
                     prev0[threadNumber] = row0[threadNumber];
             }
-            
-            for(threadNumber = 0; threadNumber<nThreads;threadNumber++)
-	    {
-		    if (wCont == sync[threadNumber]) {
-			uint64_t offTemp;     
-		        sync[threadNumber] += sqrt[threadNumber];
-		        offTemp = off0[threadNumber];
-		        off0[threadNumber] = offP[threadNumber];
-		        offP[threadNumber] = offTemp;
-		    }
+	    if (wCont == sync) {
+		    uint64_t offTemp;
+		    sync += sqrt;
+	            offTemp = off0;
+	            off0 = offP;
+	            offP = offTemp;
 	    }
         }
 
@@ -1062,7 +1034,7 @@ int LYRA2_(void *K, unsigned int kLen, const void *pwd, unsigned int pwdlen, con
         //============================ Wrap-up Phase ===============================//
         //========================= Output computation =============================//
         //Absorbs one last block of the memory matrix with the full-round sponge
-        absorbColumn(threadState[threadNumber],  memMatrix[sliceStart[threadNumber] + row0[threadNumber]]);
+        absorbColumn(threadState[threadNumber],  memMatrix[threadNumber*sizeSlicedRows + row0[threadNumber]]);
 
         //Squeezes the key
         squeeze(threadState[threadNumber], threadKey[threadNumber], kLen);
