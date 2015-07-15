@@ -41,6 +41,7 @@ john_register_one(&fmt_opencl_pomelo);
 #define MAX_KEYS_PER_CRYPT      1
 
 #define SEED 256
+#define MAX_LOOPS		4096	//must be divisible by 128
 
 
 //This file contains auto-tuning routine(s). Has to be included after formats definitions.
@@ -53,6 +54,7 @@ static const char *warn[] = {
 };
 
 #define MAX(a, b)		(((a) > (b)) ? (a) : (b))
+#define MIN(a, b)		(((a) < (b)) ? (a) : (b))
 
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
@@ -69,18 +71,25 @@ struct pomelo_salt {
 	char salt[SALT_SIZE];
 };
 
+
+struct pomelo_loop{
+	uint64_t from;
+	uint64_t to;
+};
+
 static char *saved_key;
 static unsigned int *saved_idx, key_idx;
 static size_t key_offset, idx_offset;
-static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memory;
-static cl_mem pinned_key, pinned_idx, pinned_result,
-    pinned_memory, pinned_salt;
-static char *output, *memory;
+static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_memory, cl_loop;
+static cl_mem pinned_key, pinned_idx, pinned_result, pinned_salt, pinned_loop;
+static char *output;
+static struct pomelo_loop *loop;
 static unsigned long long int MEM_SIZE;
 static unsigned short cm_cost;
 static struct pomelo_salt *saved_salt;
 static char *saved_key;
 static int clobj_allocated;
+cl_kernel pomelo_init_and_F0, pomelo_G, pomelo_H, pomelo_F_and_out;
 
 
 static struct fmt_main *self;
@@ -90,7 +99,12 @@ static void *get_salt(char *ciphertext);
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
 {
-	return autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel);
+	size_t s;
+	s=autotune_get_task_max_work_group_size(FALSE, 0, pomelo_init_and_F0);
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, pomelo_G));
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, pomelo_H));
+	s=MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, pomelo_F_and_out));
+	return s;
 }
 
 static size_t get_task_max_size()
@@ -112,21 +126,25 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	if (clobj_allocated)
 		return;
 	clobj_allocated = 1;
-	pinned_memory =
-	    clCreateBuffer(context[gpu_id],
-	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    MEM_SIZE * gws * 8, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_memory =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    MEM_SIZE * gws * 8, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-	memory =
-	    clEnqueueMapBuffer(queue[gpu_id], pinned_memory, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, MEM_SIZE * gws * 8, 0,
-	    NULL, NULL, &ret_code);
-	HANDLE_CLERROR(ret_code, "Error mapping memory");
 
+	pinned_loop =
+	    clCreateBuffer(context[gpu_id],
+	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+	    sizeof(struct pomelo_loop), NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
+	cl_loop =
+	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
+	    sizeof(struct pomelo_loop), NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error creating device buffer");
+	loop =
+	    clEnqueueMapBuffer(queue[gpu_id], pinned_loop, CL_TRUE,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, sizeof(struct pomelo_loop), 0,
+	    NULL, NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error mapping loop");
 
 	pinned_key =
 	    clCreateBuffer(context[gpu_id],
@@ -193,16 +211,25 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    0, NULL, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping output");
 
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 0, sizeof(cl_mem),
-		(void *)&cl_saved_key), "Error setting argument 0");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 1, sizeof(cl_mem),
-		(void *)&cl_saved_idx), "Error setting argument 1");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_result), "Error setting argument 2");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 3, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 3");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 4, sizeof(cl_mem),
-		(void *)&cl_memory), "Error setting argument 4");
+
+#define set_args(NAME) \
+	HANDLE_CLERROR(clSetKernelArg(NAME, 0, sizeof(cl_mem),		\
+		(void *)&cl_saved_key), "Error setting argument 0");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 1, sizeof(cl_mem),		\
+		(void *)&cl_saved_idx), "Error setting argument 1");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 2, sizeof(cl_mem),		\
+		(void *)&cl_result), "Error setting argument 2");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 3, sizeof(cl_mem),		\
+		(void *)&cl_saved_salt), "Error setting argument 3");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 4, sizeof(cl_mem),		\
+		(void *)&cl_memory), "Error setting argument 4");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 5, sizeof(cl_mem),		\
+		(void *)&cl_loop), "Error setting argument 5");	\
+
+	set_args(pomelo_init_and_F0)
+	set_args(pomelo_G)
+	set_args(pomelo_H);
+	set_args(pomelo_F_and_out);
 }
 
 static void release_clobj(void)
@@ -219,14 +246,10 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_salt,
 		saved_salt, 0, NULL, NULL),
 	    "Error Unmapping saved_salt");
-	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_memory,
-		memory, 0, NULL, NULL), "Error Unmapping memory");
 
 	HANDLE_CLERROR(clFinish(queue[gpu_id]),
 	    "Error releasing memory mappings");
 
-	HANDLE_CLERROR(clReleaseMemObject(pinned_memory),
-	    "Release pinned result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_result),
 	    "Release pinned result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_key),
@@ -249,7 +272,10 @@ static void done(void)
 {
 	release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(pomelo_init_and_F0), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(pomelo_G), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(pomelo_H), "Release kernel");
+	HANDLE_CLERROR(clReleaseKernel(pomelo_F_and_out), "Release kernel");
 	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 }
 
@@ -275,10 +301,23 @@ static void reset_(unsigned short M_COST)
 
 	opencl_init("$JOHN/kernels/pomelo_kernel.cl", gpu_id, build_opts);
 
+	pomelo_init_and_F0 =
+	    clCreateKernel(program[gpu_id], "pomelo_init_and_F0", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
 
-	// create kernel to execute
-	crypt_kernel =
-	    clCreateKernel(program[gpu_id], "pomelo_crypt_kernel", &ret_code);
+	pomelo_G =
+	    clCreateKernel(program[gpu_id], "pomelo_G", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
+
+	pomelo_H =
+	    clCreateKernel(program[gpu_id], "pomelo_H", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
+
+	pomelo_F_and_out =
+	    clCreateKernel(program[gpu_id], "pomelo_F_and_out", &ret_code);
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel. Double-check kernel name?");
 
@@ -288,7 +327,7 @@ static void reset_(unsigned short M_COST)
 	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
 
 	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 0, 10000);
+	autotune_run(self, 1, 0, 1000);
 }
 
 static void reset(struct db_main *db)
@@ -478,10 +517,13 @@ static int cmp_exact(char *source, int index)
 	return 1;
 }
 
-static int crypt_all(int *pcount, struct db_salt *salt)
+static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
 {
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
+	unsigned int T_COST=saved_salt->t_cost;
+	unsigned int M_COST=saved_salt->m_cost;
+	unsigned long i;
 
 	global_work_size =
 	    local_work_size ? (count + local_work_size -
@@ -508,16 +550,152 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		saved_idx + (idx_offset / sizeof(cl_uint)), 0, NULL,
 		multi_profilingEvent[2]), "Failed transferring index");
 
+	//pomelo_init_and_F0
+	loop->from=13 * 4;
+	loop->to=MIN(loop->from+MAX_LOOPS,(1ULL << (10 + M_COST)));
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
+	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+		CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+		multi_profilingEvent[3]), "Failed transferring salt");
+
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_init_and_F0, 1,
 		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
+		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
+
+	//pomelo_H
+	loop->from=1ULL << (9 + M_COST + T_COST);
+	loop->to = MIN(loop->from+MAX_LOOPS,(1UL << (10 + M_COST + T_COST)));
+
+	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+		CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+		multi_profilingEvent[3]), "Failed transferring salt");
+
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_H, 1,
+		NULL, &global_work_size, lws, 0, NULL,
+		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
 
 
 	// read back 
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[4]), "failed in reading data back");
+		multi_profilingEvent[5]), "failed in reading data back");
+
+
+	return count;
+}
+
+static int crypt_all(int *pcount, struct db_salt *salt)
+{
+	const int count = *pcount;
+	size_t *lws = local_work_size ? &local_work_size : NULL;
+	unsigned int T_COST=saved_salt->t_cost;
+	unsigned int M_COST=saved_salt->m_cost;
+	unsigned long i;
+
+	global_work_size =
+	    local_work_size ? (count + local_work_size -
+	    1) / local_work_size * local_work_size : count;
+
+	/* Self-test cludge */
+	if (idx_offset > 4 * (global_work_size + 1))
+		idx_offset = 0;
+
+
+	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
+		CL_FALSE, 0, sizeof(struct pomelo_salt), saved_salt, 0, NULL,
+		multi_profilingEvent[0]), "Failed transferring salt");
+
+	if (key_idx > key_offset)
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
+			cl_saved_key, CL_FALSE, key_offset,
+			key_idx - key_offset, saved_key + key_offset, 0, NULL,
+			multi_profilingEvent[1]), "Failed transferring keys");
+
+	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_idx,
+		CL_FALSE, idx_offset,
+		sizeof(cl_uint) * (global_work_size + 1) - idx_offset,
+		saved_idx + (idx_offset / sizeof(cl_uint)), 0, NULL,
+		multi_profilingEvent[2]), "Failed transferring index");
+
+	//pomelo_init_and_F0
+	for(i=13 * 4;i<((1ULL << (10 + M_COST)));i+=MAX_LOOPS)
+	{
+		loop->from=i;
+		loop->to=MIN(i+MAX_LOOPS,(1ULL << (10 + M_COST)));
+
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+			CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+			multi_profilingEvent[3]), "Failed transferring salt");
+
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_init_and_F0, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
+		HANDLE_CLERROR(clFinish(queue[gpu_id]), "Error running loop kernel");
+		opencl_process_event();
+	}
+
+	//pomelo_G
+	for(i=0;i<(1ULL << (9 + M_COST + T_COST));i+=MAX_LOOPS)
+	{
+		loop->from=i;
+		loop->to=MIN(i+MAX_LOOPS,(1ULL << (9 + M_COST + T_COST)));
+
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+			CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+			multi_profilingEvent[3]), "Failed transferring salt");
+
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_G, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
+		HANDLE_CLERROR(clFinish(queue[gpu_id]), "Error running loop kernel");
+		opencl_process_event();
+	}
+
+	//pomelo_H
+	for(i=1ULL << (9 + M_COST + T_COST);i<(1ULL << (10 + M_COST + T_COST));i+=MAX_LOOPS)
+	{
+		loop->from=i;
+		loop->to = MIN(i+MAX_LOOPS,(1UL << (10 + M_COST + T_COST)));
+
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+			CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+			multi_profilingEvent[3]), "Failed transferring salt");
+
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_H, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
+		HANDLE_CLERROR(clFinish(queue[gpu_id]), "Error running loop kernel");
+		opencl_process_event();
+	}
+
+	//pomelo_F_and_out
+	for(i=0;i<(1ULL << (10 + M_COST));i+=MAX_LOOPS)
+	{
+		loop->from=i;
+		loop->to = MIN(i+MAX_LOOPS,(1ULL << (10 + M_COST)));
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
+			CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
+			multi_profilingEvent[3]), "Failed transferring salt");
+
+		HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_F_and_out, 1,
+			NULL, &global_work_size, lws, 0, NULL,
+			multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+
+		HANDLE_CLERROR(clFinish(queue[gpu_id]), "Error running loop kernel");
+		opencl_process_event();
+	}
+
+	// read back 
+	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
+		0, BINARY_SIZE * count, output, 0, NULL,
+		multi_profilingEvent[5]), "failed in reading data back");
+
+	opencl_process_event();
 
 
 	return count;
