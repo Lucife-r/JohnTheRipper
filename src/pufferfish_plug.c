@@ -175,7 +175,7 @@ void *pufferfish ( const char *pass, size_t len_p, char *settings, size_t outlen
 
     len_settings = pos + PUF_ID_LEN + 1;
 
-    bytes = decode64 ( decoded, pos, settings + PUF_ID_LEN );
+    bytes = pufferfish_decode64 ( decoded, pos, settings + PUF_ID_LEN );
     saltlen = bytes - 4;
 
     memmove ( tcost_str + 2, decoded, 2 );
@@ -217,7 +217,7 @@ void *pufferfish ( const char *pass, size_t len_p, char *settings, size_t outlen
     {
         out = ( unsigned char * ) calloc ( len_settings + 1 + ( blockcnt * DIGEST_LEN * 2 ), sizeof ( unsigned char ) );
         memmove ( out, settings, len_settings );
-        encode64 ( ( char * ) &out[len_settings], rawbuf, outlen );
+        pufferfish_encode64 ( ( char * ) &out[len_settings], rawbuf, outlen );
     }
 
     for ( i = 0; i < NUM_SBOXES; i++ )
@@ -263,7 +263,7 @@ void *pufferfish_custom ( const char *pass, size_t len_p, char *settings, unsign
 
     len_settings = pos + PUF_ID_LEN + 1;
 
-    bytes = decode64 ( decoded, pos, settings + PUF_ID_LEN );
+    bytes = pufferfish_decode64 ( decoded, pos, settings + PUF_ID_LEN );
     saltlen = bytes - 4;
 
     memmove ( tcost_str + 2, decoded, 2 );
@@ -304,7 +304,7 @@ void *pufferfish_custom ( const char *pass, size_t len_p, char *settings, unsign
     {
 	len_settings = original_len_settings;
         memcpy ( out, settings, len_settings );
-        encode64 ( ( char * ) &out[len_settings], rawbuf, outlen );
+        pufferfish_encode64 ( ( char * ) &out[len_settings], rawbuf, outlen );
     }
 
      for ( i = 0; i < NUM_SBOXES; i++ )

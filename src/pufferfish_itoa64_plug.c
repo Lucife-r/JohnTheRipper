@@ -2,7 +2,7 @@
 #include "pufferfish_itoa64.h"
 #include "memdbg.h"
 
-int encode64 (char *dst, unsigned char *src, int size)
+int pufferfish_encode64 (char *dst, unsigned char *src, int size)
 {
     char *dptr = dst;
     unsigned char *sptr = src;
@@ -48,7 +48,7 @@ int encode64 (char *dst, unsigned char *src, int size)
     return (dptr - dst);
 }
 
-int decode64 (unsigned char *dst, int size, char *src)
+int pufferfish_decode64 (unsigned char *dst, int size, char *src)
 {
     unsigned char *sptr = (unsigned char *) src;
     unsigned char *dptr = dst;

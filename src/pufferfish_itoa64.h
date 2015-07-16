@@ -16,5 +16,5 @@ const static unsigned char index64[0x80] = {
          43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53,255,255,255,255,255
 };
 
-extern int encode64 (char *dst, unsigned char *src, int size);
-extern int decode64 (unsigned char *dst, int size, char *src);
+extern int pufferfish_encode64 (char *dst, unsigned char *src, int size);
+extern int pufferfish_decode64 (unsigned char *dst, int size, char *src);
