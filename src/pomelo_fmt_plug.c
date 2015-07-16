@@ -230,22 +230,7 @@ static void *get_salt(char *ciphertext)
 
 static void set_salt(void *salt)
 {
-	/*int i;
-	size_t mem_size;*/
 	memcpy(&saved_salt,salt,sizeof(struct pomelo_salt));
-	/*if(prev_m_cost>=(int)saved_salt.m_cost)
-		return;
-	mem_size= 1ULL << (13 + saved_salt.m_cost);
-	free_allocated();
-	prev_m_cost=saved_salt.m_cost;
-	allocated=malloc(threads*(sizeof(struct pomelo_allocation)));
-	for(i=0;i<threads;i++)
-	{
-		allocated[i].alloc=malloc(mem_size+ALIGN);
-		allocated[i].buffer=allocated[i].alloc;
-		while((size_t)allocated[i].buffer%ALIGN)
-			allocated[i].buffer++;
-	}*/
 }
 
 static int cmp_all(void *binary, int count)

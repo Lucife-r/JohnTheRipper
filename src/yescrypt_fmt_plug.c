@@ -19,7 +19,6 @@ john_register_one(&fmt_yescrypt);
 #include "formats.h"
 #include "memdbg.h"
 #include "yescrypt.h"
-#include "opencl_yescrypt.h" //pomidor
 
 #ifdef _OPENMP
 #include <omp.h>

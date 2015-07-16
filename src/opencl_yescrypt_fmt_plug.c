@@ -21,7 +21,6 @@ john_register_one(&fmt_opencl_yescrypt);
 #include "formats.h"
 #include "common-opencl.h"
 #include "yescrypt.h"
-#include "opencl_yescrypt.h"
 
 #define FORMAT_LABEL            "yescrypt-opencl"
 #define FORMAT_NAME             ""
@@ -80,8 +79,8 @@ static struct fmt_tests tests[] = {
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$gZ.es2fD1WJAqx5ioo6ZqERrWYzP8iH0uOsUCUJ9lVA","NSA"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$XqyoZHZjZ3KCuNUW4NP/WgG/aAv7jhvp19cSWYJPa86","keyboard"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$etMpFbzahhNbJ0UPlAESnepEdKjs5VqpbpMEZyl.7H/","spiderman"},
-	{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
-	{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs
+	//{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
+	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs
 	{NULL}
 };
 
@@ -94,9 +93,9 @@ static cl_mem pinned_key, pinned_idx, pinned_result,
 static char *output;
 static struct yescrypt_salt *saved_salt;
 static char *saved_key;
-ulong N,r,p,g;
-yescrypt_flags_t flags;
-yescrypt_flags_t saved_flags;
+static ulong N,r,p,g;
+static yescrypt_flags_t flags;
+static yescrypt_flags_t saved_flags;
 
 static struct fmt_main *self;
 
@@ -133,6 +132,18 @@ static size_t get_default_workgroup()
 		return 64;
 }
 
+static void print_memory(double memory)
+{
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+} 
+
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
 	long V_size=128*r*(N<<(g*2));
@@ -142,8 +153,8 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 
 
 	cl_V = cl_B = cl_XY = cl_S = NULL;
-
-
+	
+	
 	cl_B=clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	     gws * B_size, NULL, &ret_code);
 	     HANDLE_CLERROR(ret_code, "Error creating device buffer");
@@ -212,7 +223,7 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	pinned_result =
 	    clCreateBuffer(context[gpu_id],
 	    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-	    (BINARY_SIZE * gws) , NULL, &ret_code);
+	    (HASH_SIZE * gws) , NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_result =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
@@ -220,7 +231,7 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 	output =
 	    clEnqueueMapBuffer(queue[gpu_id], pinned_result, CL_TRUE,
-	    CL_MAP_READ | CL_MAP_WRITE, 0, BINARY_SIZE * gws,
+	    CL_MAP_READ | CL_MAP_WRITE, 0, HASH_SIZE * gws,
 	    0, NULL, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping output");
 
@@ -316,6 +327,8 @@ static void reset_()
 	need=V_size+B_size+XY_size;
 	if (flags & YESCRYPT_RW)
 		need+=S_size;
+
+	print_memory(need);
 
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
@@ -629,9 +642,11 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		key_idx, saved_key, 0, NULL,
 		multi_profilingEvent[1]), "Failed transferring keys");
 
+
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_idx,
 		CL_FALSE, 0, sizeof(cl_uint) * (global_work_size + 1),
 		saved_idx, 0, NULL, multi_profilingEvent[2]), "Failed transferring index");
+
 
 	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
 		NULL, &global_work_size, lws, 0, NULL,

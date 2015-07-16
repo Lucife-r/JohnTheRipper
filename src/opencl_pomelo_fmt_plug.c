@@ -121,6 +121,18 @@ static size_t get_default_workgroup()
 		return 64;
 }
 
+static void print_memory(double memory)
+{
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+} 
+
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
 	if (clobj_allocated)
@@ -322,6 +334,9 @@ static void reset_(unsigned short M_COST)
 	    "Error creating kernel. Double-check kernel name?");
 
 	release_clobj();
+
+	print_memory(MEM_SIZE*8);
+	
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
 	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE * 8, 0);
@@ -517,74 +532,6 @@ static int cmp_exact(char *source, int index)
 	return 1;
 }
 
-static int crypt_all_benchmark(int *pcount, struct db_salt *salt)
-{
-	const int count = *pcount;
-	size_t *lws = local_work_size ? &local_work_size : NULL;
-	unsigned int T_COST=saved_salt->t_cost;
-	unsigned int M_COST=saved_salt->m_cost;
-	unsigned long i;
-
-	global_work_size =
-	    local_work_size ? (count + local_work_size -
-	    1) / local_work_size * local_work_size : count;
-
-	/* Self-test cludge */
-	if (idx_offset > 4 * (global_work_size + 1))
-		idx_offset = 0;
-
-
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
-		CL_FALSE, 0, sizeof(struct pomelo_salt), saved_salt, 0, NULL,
-		multi_profilingEvent[0]), "Failed transferring salt");
-
-	if (key_idx > key_offset)
-		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
-			cl_saved_key, CL_FALSE, key_offset,
-			key_idx - key_offset, saved_key + key_offset, 0, NULL,
-			multi_profilingEvent[1]), "Failed transferring keys");
-
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_idx,
-		CL_FALSE, idx_offset,
-		sizeof(cl_uint) * (global_work_size + 1) - idx_offset,
-		saved_idx + (idx_offset / sizeof(cl_uint)), 0, NULL,
-		multi_profilingEvent[2]), "Failed transferring index");
-
-	//pomelo_init_and_F0
-	loop->from=13 * 4;
-	loop->to=MIN(loop->from+MAX_LOOPS,(1ULL << (10 + M_COST)));
-
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
-		CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
-		multi_profilingEvent[3]), "Failed transferring salt");
-
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_init_and_F0, 1,
-		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
-
-
-	//pomelo_H
-	loop->from=1ULL << (9 + M_COST + T_COST);
-	loop->to = MIN(loop->from+MAX_LOOPS,(1UL << (10 + M_COST + T_COST)));
-
-	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_loop,
-		CL_FALSE, 0, sizeof(struct pomelo_loop), loop, 0, NULL,
-		multi_profilingEvent[3]), "Failed transferring salt");
-
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], pomelo_H, 1,
-		NULL, &global_work_size, lws, 0, NULL,
-		multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
-
-
-
-	// read back 
-	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
-		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[5]), "failed in reading data back");
-
-
-	return count;
-}
 
 static int crypt_all(int *pcount, struct db_salt *salt)
 {

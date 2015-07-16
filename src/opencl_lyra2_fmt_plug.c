@@ -25,7 +25,7 @@ john_register_one(&fmt_opencl_lyra2);
 
 #define FORMAT_LABEL            "Lyra2-opencl"
 #define FORMAT_NAME             ""
-#define ALGORITHM_NAME          "Blake2 OpenCL (inefficient, development use only)"
+#define ALGORITHM_NAME          "Lyra2 OpenCL (inefficient, development use only)"
 
 #define BENCHMARK_COMMENT	""
 #define BENCHMARK_LENGTH	-1
@@ -55,6 +55,7 @@ static const char *warn[] = {
 };
 
 #define MAX(a, b)		(((a) > (b)) ? (a) : (b))
+#define MIN(a, b)		(((a) < (b)) ? (a) : (b))
 
 static struct fmt_tests tests[] = {
 	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
@@ -99,7 +100,11 @@ static unsigned int tunable_cost_p(void *_salt);
 static size_t get_task_max_work_group_size()
 {
 	size_t s;
-	s= autotune_get_task_max_work_group_size(FALSE, 0, setupPhaseWanderingGPU_kernel);
+	s= autotune_get_task_max_work_group_size(FALSE, 0, bootStrapAndAbsorb_kernel);
+	s= MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, reducedSqueezeRow0_kernel));
+	s= MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, reducedDuplexRow_kernel));
+	s= MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, setupPhaseWanderingGPU_kernel));
+	s= MIN(s,autotune_get_task_max_work_group_size(FALSE, 0, setupPhaseWanderingGPU_P1_kernel));
 	return s;
 }
 
@@ -114,13 +119,27 @@ static size_t get_default_workgroup()
 		return get_platform_vendor_id(platform_id) == DEV_INTEL ?
 		    8 : 1;
 	else
-		return 64;
+		return 0;
 }
+
+static void print_memory(double memory)
+{
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+} 
+
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
 	if (clobj_allocated)
 		return;
+
 	clobj_allocated = 1;
 
 
@@ -129,7 +148,6 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    gws * M_COST * ROW_LEN_BYTES, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
-
 
 	pinned_pKeysGPU =
 	    clCreateBuffer(context[gpu_id],
@@ -153,7 +171,6 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	HANDLE_CLERROR(ret_code, "Error creating device buffer");
 
 
-	HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
 	cl_stateIdxGPU =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    gws * nPARALLEL * BLOCK_LEN_BLAKE2_SAFE_BYTES, NULL, &ret_code);
@@ -330,7 +347,6 @@ static void reset_()
 
 	opencl_init("$JOHN/kernels/lyra2_kernel.cl", gpu_id, build_opts);
 
-
 	bootStrapAndAbsorb_kernel =
 	    clCreateKernel(program[gpu_id], "lyra2_bootStrapAndAbsorb", &ret_code);
 	HANDLE_CLERROR(ret_code,
@@ -353,11 +369,12 @@ static void reset_()
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel setupPhaseWanderingGPU_P1. Double-check kernel name?");
 
-	setupPhaseWanderingGPU_kernel =
+	crypt_kernel=setupPhaseWanderingGPU_kernel =
 	    clCreateKernel(program[gpu_id], "lyra2_setupPhaseWanderingGPU", &ret_code);
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel setupPhaseWanderingGPU. Double-check kernel name?");
 
+	print_memory(M_COST * ROW_LEN_BYTES);
 
 	release_clobj();
 	//Initialize openCL tuning (library) for this format.

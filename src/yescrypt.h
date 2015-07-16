@@ -34,6 +34,25 @@
 #include <stdlib.h> /* for size_t */
 #include "memory.h"
 
+/* These are tunable */
+#define PWXsimple 2
+#define PWXgather 4
+#define PWXrounds 6
+#define Swidth 8
+
+/* Derived values.  Not tunable on their own. */
+#define PWXbytes (PWXgather * PWXsimple * 8)
+#define PWXwords (PWXbytes / sizeof(ulong))
+#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
+#define Swords (Sbytes / sizeof(ulong))
+#define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
+#define Smask2 (((ulong)Smask << 32) | Smask)
+#define rmin ((PWXbytes + 127) / 128)
+
+#if PWXbytes % 32 != 0
+#error "blkcpy() and blkxor() currently work on multiples of 32."
+#endif
+
 /**
  * crypto_yescrypt(passwd, passwdlen, salt, saltlen, N, r, p, buf, buflen):
  * Compute scrypt(passwd[0 .. passwdlen - 1], salt[0 .. saltlen - 1], N, r,

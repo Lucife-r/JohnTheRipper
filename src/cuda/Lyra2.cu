@@ -58,6 +58,22 @@ __host__ void multPasswordCUDA(unsigned char *K, int kLen, unsigned char *passwo
     cudaDeviceReset();
 }
 
+static void print_memory(double memory)
+{
+	static int printed=0;
+	if(printed)
+		return;
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+	printed=1;
+} 
+
 int gpuMult(void *K, unsigned int kLen, unsigned char *passwords, unsigned int pwdlen, unsigned char *salt, unsigned int saltlen, unsigned int timeCost, unsigned int nRows, unsigned int nPARALLEL, unsigned int N_COLS, unsigned int totalPasswords, unsigned int gridSize, unsigned int blockSize) {
     int result = 0;
 
@@ -67,6 +83,8 @@ int gpuMult(void *K, unsigned int kLen, unsigned char *passwords, unsigned int p
     cudaError_t errorCUDA;
     uint64_t sizeSlice = nRows / nPARALLEL;
     //==========================================================================/
+
+    print_memory(nRows * ROW_LEN_BYTES);
 
     //Checks kernel geometry configuration
     if ((gridSize * blockSize) != (totalPasswords * nPARALLEL)) {
@@ -90,6 +108,7 @@ int gpuMult(void *K, unsigned int kLen, unsigned char *passwords, unsigned int p
         printf("Error: %s \n", cudaGetErrorString(errorCUDA));
         return -2;
     }
+
 
     //Allocates the GPU keys
     unsigned char *pkeysGPU;
