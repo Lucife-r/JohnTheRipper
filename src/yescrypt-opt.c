@@ -193,24 +193,6 @@ blockmix_salsa8(const uint64_t * Bin, uint64_t * Bout, uint64_t * X, size_t r)
 	}
 }
 
-/* These are tunable */
-#define PWXsimple 2
-#define PWXgather 4
-#define PWXrounds 6
-#define Swidth 8
-
-/* Derived values.  Not tunable on their own. */
-#define PWXbytes (PWXgather * PWXsimple * 8)
-#define PWXwords (PWXbytes / sizeof(uint64_t))
-#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
-#define Swords (Sbytes / sizeof(uint64_t))
-#define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
-#define Smask2 (((uint64_t)Smask << 32) | Smask)
-#define rmin ((PWXbytes + 127) / 128)
-
-#if PWXbytes % 32 != 0
-#error "blkcpy() and blkxor() currently work on multiples of 32."
-#endif
 
 /**
  * pwxform(B):

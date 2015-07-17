@@ -251,19 +251,6 @@ blockmix_salsa8(const salsa20_blk_t *restrict Bin,
 	((uint64_t)(uint32_t)_mm_cvtsi128_si32(HI32(X)) << 32))
 #endif
 
-/* This is tunable */
-#define Swidth 8
-
-/* Not tunable in this implementation, hard-coded in a few places */
-#define PWXsimple 2
-#define PWXgather 4
-
-/* Derived values.  Not tunable except via Swidth above. */
-#define PWXbytes (PWXgather * PWXsimple * 8)
-#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
-#define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
-#define Smask2 (((uint64_t)Smask << 32) | Smask)
-
 #if !defined(__x86_64__) && defined(__SSE4_1__)
 /* 32-bit with SSE4.1 */
 #define PWXFORM_X_T __m128i

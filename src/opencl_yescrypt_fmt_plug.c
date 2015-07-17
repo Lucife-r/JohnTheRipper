@@ -21,6 +21,7 @@ john_register_one(&fmt_opencl_yescrypt);
 #include "formats.h"
 #include "common-opencl.h"
 #include "yescrypt.h"
+#include "opencl_yescrypt.h"
 
 #define FORMAT_LABEL            "yescrypt-opencl"
 #define FORMAT_NAME             ""
@@ -63,7 +64,6 @@ static const char *warn[] = {
 	", crypt: ", ", xfer: "
 };
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
 
 struct yescrypt_salt {
 	char salt[SALT_SIZE];
@@ -293,10 +293,13 @@ static void release_clobj(void)
 
 static void done(void)
 {
-	release_clobj();
+	if(autotuned)
+	{
+		release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
-	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+		HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+	}
 }
 
 
@@ -341,33 +344,36 @@ static void reset_()
 
 static void reset(struct db_main *db)
 {
-	int i;
-	N=p=r=g=flags=0;
-	if (!db) {
-		for (i = 0; tests[i].ciphertext; i++)
-		{
-			struct yescrypt_salt *salt;
-			N = MAX(N, tunable_cost_N(get_salt(tests[i].ciphertext)));
-			p = MAX(p, tunable_cost_p(get_salt(tests[i].ciphertext)));
-			r = MAX(r, tunable_cost_r(get_salt(tests[i].ciphertext)));
-			g = MAX(g, tunable_cost_g(get_salt(tests[i].ciphertext)));
-			salt=get_salt(tests[i].ciphertext);
-			flags = salt->flags;
-		}
-		reset_();
-	} else {
-		struct db_salt *salts = db->salts;
-		while (salts != NULL) {
-			struct yescrypt_salt * salt=salts->salt;
-			N = MAX(N, salt->N);
-			r = MAX(r, salt->r);
-			g = MAX(g, salt->g);
-			p = MAX(p, salt->p);
-			flags=salt->flags;
+	if(!autotuned)
+	{
+		int i;
+		N=p=r=g=flags=0;
+		if (!db) {
+			for (i = 0; tests[i].ciphertext; i++)
+			{
+				struct yescrypt_salt *salt;
+				N = MAX(N, tunable_cost_N(get_salt(tests[i].ciphertext)));
+				p = MAX(p, tunable_cost_p(get_salt(tests[i].ciphertext)));
+				r = MAX(r, tunable_cost_r(get_salt(tests[i].ciphertext)));
+				g = MAX(g, tunable_cost_g(get_salt(tests[i].ciphertext)));
+				salt=get_salt(tests[i].ciphertext);
+				flags = salt->flags;
+			}
+			reset_();
+		} else {
+			struct db_salt *salts = db->salts;
+			while (salts != NULL) {
+				struct yescrypt_salt * salt=salts->salt;
+				N = MAX(N, salt->N);
+				r = MAX(r, salt->r);
+				g = MAX(g, salt->g);
+				p = MAX(p, salt->p);
+				flags=salt->flags;
 
-			salts = salts->next;
+				salts = salts->next;
+			}
+			reset_();
 		}
-		reset_();
 	}
 }
 

@@ -54,9 +54,6 @@ static const char *warn[] = {
 	", crypt: ", ", xfer: "
 };
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
-#define MIN(a, b)		(((a) < (b)) ? (a) : (b))
-
 static struct fmt_tests tests[] = {
 	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
 	{"$Lyra2$8$8$256$2$salt2$e61b2fc5a76d234c49188c2d6c234f5b5721382b127bea0177287bf5f765ec1a","password"},
@@ -327,14 +324,17 @@ static void release_clobj(void)
 
 static void done(void)
 {
-	release_clobj();
+	if(autotuned)
+	{
+		release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(bootStrapAndAbsorb_kernel), "Release bootStrapAndAbsorb_kernel");
-	HANDLE_CLERROR(clReleaseKernel(reducedSqueezeRow0_kernel), "Release reducedSqueezeRow0_kernel");
-	HANDLE_CLERROR(clReleaseKernel(reducedDuplexRow_kernel), "Release reducedDuplexRow_kernel");
-	HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_kernel), "Release setupPhaseWanderingGPU_kernel");
-	HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_P1_kernel), "Release setupPhaseWanderingGPU_kernel");
-	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+		HANDLE_CLERROR(clReleaseKernel(bootStrapAndAbsorb_kernel), "Release bootStrapAndAbsorb_kernel");
+		HANDLE_CLERROR(clReleaseKernel(reducedSqueezeRow0_kernel), "Release reducedSqueezeRow0_kernel");
+		HANDLE_CLERROR(clReleaseKernel(reducedDuplexRow_kernel), "Release reducedDuplexRow_kernel");
+		HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_kernel), "Release setupPhaseWanderingGPU_kernel");
+		HANDLE_CLERROR(clReleaseKernel(setupPhaseWanderingGPU_P1_kernel), "Release setupPhaseWanderingGPU_kernel");
+		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+	}
 }
 
 
@@ -387,28 +387,31 @@ static void reset_()
 
 static void reset(struct db_main *db)
 {
-	int i;
-	M_COST=0;
-	nPARALLEL=0;
-	N_COLS=0;
-	if (!db) {
-		for (i = 0; tests[i].ciphertext; i++)
-		{ 
-			M_COST = MAX(M_COST, tunable_cost_m(get_salt(tests[i].ciphertext)));
-			N_COLS = MAX(N_COLS, tunable_cost_c(get_salt(tests[i].ciphertext)));
-			nPARALLEL = MAX(nPARALLEL, tunable_cost_p(get_salt(tests[i].ciphertext)));
+	if(!autotuned)
+	{
+		int i;
+		M_COST=0;
+		nPARALLEL=0;
+		N_COLS=0;
+		if (!db) {
+			for (i = 0; tests[i].ciphertext; i++)
+			{ 
+				M_COST = MAX(M_COST, tunable_cost_m(get_salt(tests[i].ciphertext)));
+				N_COLS = MAX(N_COLS, tunable_cost_c(get_salt(tests[i].ciphertext)));
+				nPARALLEL = MAX(nPARALLEL, tunable_cost_p(get_salt(tests[i].ciphertext)));
+			}
+			reset_();
+		} else {
+			struct db_salt *salt = db->salts;
+			M_COST = 0;
+			while (salt != NULL) {
+				M_COST = MAX(M_COST, salt->cost[1]);
+				N_COLS = MAX(N_COLS, salt->cost[2]);
+				nPARALLEL = MAX(nPARALLEL, salt->cost[3]);
+				salt = salt->next;
+			}
+			reset_();
 		}
-		reset_();
-	} else {
-		struct db_salt *salt = db->salts;
-		M_COST = 0;
-		while (salt != NULL) {
-			M_COST = MAX(M_COST, salt->cost[1]);
-			N_COLS = MAX(N_COLS, salt->cost[2]);
-			nPARALLEL = MAX(nPARALLEL, salt->cost[3]);
-			salt = salt->next;
-		}
-		reset_();
 	}
 }
 

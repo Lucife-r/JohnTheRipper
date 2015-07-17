@@ -34,6 +34,23 @@
 #include <stdlib.h> /* for size_t */
 #include "memory.h"
 
+#ifdef __SSE2__
+
+/* This is tunable */
+#define Swidth 8
+
+/* Not tunable in this implementation, hard-coded in a few places */
+#define PWXsimple 2
+#define PWXgather 4
+
+/* Derived values.  Not tunable except via Swidth above. */
+#define PWXbytes (PWXgather * PWXsimple * 8)
+#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
+#define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
+#define Smask2 (((uint64_t)Smask << 32) | Smask)
+
+#else
+
 /* These are tunable */
 #define PWXsimple 2
 #define PWXgather 4
@@ -44,13 +61,15 @@
 #define PWXbytes (PWXgather * PWXsimple * 8)
 #define PWXwords (PWXbytes / sizeof(ulong))
 #define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
-#define Swords (Sbytes / sizeof(ulong))
+#define Swords (Sbytes / sizeof(uint64_t))
 #define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
-#define Smask2 (((ulong)Smask << 32) | Smask)
+#define Smask2 (((uint64_t)Smask << 32) | Smask)
 #define rmin ((PWXbytes + 127) / 128)
 
 #if PWXbytes % 32 != 0
 #error "blkcpy() and blkxor() currently work on multiples of 32."
+#endif
+
 #endif
 
 /**

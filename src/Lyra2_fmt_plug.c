@@ -49,8 +49,6 @@ john_register_one(&fmt_lyra2);
 
 #define OMP_SCALE			1
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
-
 static struct fmt_tests tests[] = {
 	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},
 	{"$Lyra2$8$8$256$2$salt2$e61b2fc5a76d234c49188c2d6c234f5b5721382b127bea0177287bf5f765ec1a","password"},

@@ -281,7 +281,7 @@ __kernel void pomelo_init_and_F0(__global const uchar * in,
 	unsigned long i0, i1, i2, i3, i4;
 
 	unsigned long random_number, index_global, index_local;
-	unsigned long state_size, mask, mask1;
+	unsigned long mask1;
 	ulong4 v, v1, v2, v3, v4;
 
 	unsigned short int M_COST, T_COST;
@@ -292,8 +292,6 @@ __kernel void pomelo_init_and_F0(__global const uchar * in,
 	gid = get_global_id(0);
 	GID = get_global_size(0);
 	gid4 = gid * 4;
-
-	out += gid * BINARY_SIZE;
 
 	base = index[gid];
 	inlen = index[gid + 1] - base;
@@ -309,10 +307,7 @@ __kernel void pomelo_init_and_F0(__global const uchar * in,
 
 	if (inlen > 256 || saltlen > 64 || outlen > 256)
 		return;
-
-	state_size = 1UL << (13 + M_COST);
-
-	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
+ 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
 
 
@@ -369,7 +364,7 @@ __kernel void pomelo_G(__global const uchar * in,
 	unsigned long i0, i1, i2, i3, i4;
 
 	unsigned long random_number, index_global, index_local;
-	unsigned long state_size, mask, mask1;
+	unsigned long mask, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
 	unsigned short int M_COST, T_COST;
@@ -398,7 +393,6 @@ __kernel void pomelo_G(__global const uchar * in,
 	if (inlen > 256 || saltlen > 64 || outlen > 256)
 		return;
 
-	state_size = 1UL << (13 + M_COST);
 
 	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
@@ -436,7 +430,7 @@ __kernel void pomelo_H(__global const uchar * in,
 	unsigned long i0, i1, i2, i3, i4;
 
 	unsigned long random_number, index_global, index_local;
-	unsigned long state_size, mask, mask1;
+	unsigned long mask, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
 	unsigned short int M_COST, T_COST;
@@ -464,8 +458,6 @@ __kernel void pomelo_H(__global const uchar * in,
 
 	if (inlen > 256 || saltlen > 64 || outlen > 256)
 		return;
-
-	state_size = 1UL << (13 + M_COST);
 
 	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
@@ -501,7 +493,7 @@ __kernel void pomelo_F_and_out(__global const uchar * in,
 	unsigned long i0, i1, i2, i3, i4;
 
 	unsigned long random_number, index_global, index_local;
-	unsigned long state_size, mask, mask1;
+	unsigned long state_size, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
 	unsigned short int M_COST, T_COST;
@@ -532,7 +524,6 @@ __kernel void pomelo_F_and_out(__global const uchar * in,
 
 	state_size = 1UL << (13 + M_COST);
 
-	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
 
 

@@ -60,7 +60,7 @@ char *pf_gensalt ( const unsigned char *salt, size_t saltlen, unsigned int t_cos
     memmove ( out, PUF_ID, PUF_ID_LEN );
 
     /* encode the buffer and copy it to the output string */
-    bytes = encode64 ( &out[PUF_ID_LEN], buf, saltlen + 4 );
+    bytes = pufferfish_encode64 ( &out[PUF_ID_LEN], buf, saltlen + 4 );
 
     /* add the trailing $ to the output string */
     out[PUF_ID_LEN + bytes] = '$';

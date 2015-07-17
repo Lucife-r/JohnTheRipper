@@ -31,6 +31,19 @@
 #ifndef _OPENCL_YESCRYPT_H
 #define _OPENCL_YESCRYPT_H
 
+
+#undef PWXsimple
+#undef PWXgather
+#undef PWXrounds
+#undef Swidth
+#undef PWXbytes
+#undef PWXwords
+#undef Sbytes
+#undef Swords
+#undef Smask
+#undef Smask2
+#undef rmin
+
 /* These are tunable */
 #define PWXsimple 2
 #define PWXgather 4

@@ -64,13 +64,8 @@ john_register_one(&fmt_yescrypt);
 
 #define HASH_LEN BYTES2CHARS(BINARY_SIZE) /* base-64 chars */
 
-#ifdef __AVX2__
 #define OMP_SCALE 1
-#elif  defined(SIMD_COEF_64)
-#define OMP_SCALE 1
-#else
-#define OMP_SCALE 1
-#endif
+
 
 struct yescrypt_salt {
 	char salt[SALT_SIZE];
@@ -140,7 +135,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 {
 	int i;
 	uint64_t N;
-	uint32_t r, p, t;
+	uint32_t r, p;
 	size_t prefixlen, saltlen, need;
 	const char *src, *salt;
 	struct yescrypt_salt * tmp_salt;
@@ -206,15 +201,44 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	if(saltlen>sizeof(saved_salt.salt))
 		return 0;
 
-	/* Sanity-check parameters */
-	tmp_salt=(struct yescrypt_salt *)get_salt(ciphertext);
+		tmp_salt=(struct yescrypt_salt *)get_salt(ciphertext);
 	flags=tmp_salt->flags;
 	N=tmp_salt->N;
 	r=tmp_salt->r;
 	p=tmp_salt->p;
-	t=tmp_salt->t;
 
-	if ((flags & ~YESCRYPT_KNOWN_FLAGS) || (!flags && t)) {
+	/* Sanity-check parameters */
+
+#ifdef __SSE2__
+
+	if (flags & ~YESCRYPT_KNOWN_FLAGS) {
+		return 0;
+	}
+	if ((uint64_t)(r) * (uint64_t)(p) >= (1 << 30)) {
+		return 0;
+	}
+	if (N > UINT32_MAX) {
+		return 0;
+	}
+	if (((N & (N - 1)) != 0) || (N <= 3) || (r < 1) || (p < 1)) {
+		return 0;
+	}
+	if ((r > SIZE_MAX / 256 / p) ||
+	    (N > SIZE_MAX / 128 / r)) {
+		return 0;
+	}
+	if (flags & YESCRYPT_RW) {
+		if (N / p <= 3) {
+			return 0;
+		}
+		if (p > SIZE_MAX / Sbytes) {
+			return 0;
+		}
+	}
+
+#else
+
+	if ((flags & ~YESCRYPT_KNOWN_FLAGS)) {
 		return 0;
 	}
 
@@ -242,6 +266,8 @@ static int valid(char *ciphertext, struct fmt_main *self)
 			return 0;
 		}
 	}
+
+#endif
 
 	return 1;
 }

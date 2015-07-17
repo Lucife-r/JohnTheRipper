@@ -49,7 +49,6 @@ john_register_one(&fmt_lyra2_lm);
 
 #define OMP_SCALE 			1
 
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 static struct fmt_tests tests[] = {
 	{"$Lyra2$8$8$256$2$salt$03cafef9b80e74342b781e0c626db07f4783210c99e94e5271845fd48c8f80af", "password"},

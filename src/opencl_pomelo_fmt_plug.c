@@ -53,9 +53,6 @@ static const char *warn[] = {
 	", crypt: ", ", xfer: "
 };
 
-#define MAX(a, b)		(((a) > (b)) ? (a) : (b))
-#define MIN(a, b)		(((a) < (b)) ? (a) : (b))
-
 static struct fmt_tests tests[] = {
 	{"$POMELO$2$2$S$982D98794C7D4E728552970972665E6BF0B829353C846E5063B78FDC98F8A61473218A18D5DBAEB0F987400F2CC44865EB02", "password"},
 	{"$POMELO$2$2$salt$CBA3E72A1F3CAD74AE0E33F353787E82E1D808C65908B2EA57BA5BDD435D3BC645937A1772D1AA18D91D7164616B010810C359B04F4FFA58E60C04C6B8A095DE4500C18CD815A8960E54B0777A3279485EC559BE34D5DBFBF2A66BA61F386FC8896A18D8", "pass"},
@@ -282,13 +279,16 @@ static void release_clobj(void)
 
 static void done(void)
 {
-	release_clobj();
+	if(autotuned)
+	{
+		release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(pomelo_init_and_F0), "Release kernel");
-	HANDLE_CLERROR(clReleaseKernel(pomelo_G), "Release kernel");
-	HANDLE_CLERROR(clReleaseKernel(pomelo_H), "Release kernel");
-	HANDLE_CLERROR(clReleaseKernel(pomelo_F_and_out), "Release kernel");
-	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+		HANDLE_CLERROR(clReleaseKernel(pomelo_init_and_F0), "Release kernel");
+		HANDLE_CLERROR(clReleaseKernel(pomelo_G), "Release kernel");
+		HANDLE_CLERROR(clReleaseKernel(pomelo_H), "Release kernel");
+		HANDLE_CLERROR(clReleaseKernel(pomelo_F_and_out), "Release kernel");
+		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+	}
 }
 
 
@@ -347,18 +347,21 @@ static void reset_(unsigned short M_COST)
 
 static void reset(struct db_main *db)
 {
-	unsigned short M_COST;
-	if (!db) {
-		M_COST = max_test_cost();
-		reset_(M_COST);
-	} else {
-		struct db_salt *salt = db->salts;
-		M_COST = 0;
-		while (salt != NULL) {
-			M_COST = MAX(M_COST, salt->cost[1]);
-			salt = salt->next;
+	if(!autotuned)
+	{
+		unsigned short M_COST;
+		if (!db) {
+			M_COST = max_test_cost();
+			reset_(M_COST);
+		} else {
+			struct db_salt *salt = db->salts;
+			M_COST = 0;
+			while (salt != NULL) {
+				M_COST = MAX(M_COST, salt->cost[1]);
+				salt = salt->next;
+			}
+			reset_(M_COST);
 		}
-		reset_(M_COST);
 	}
 }
 
