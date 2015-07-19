@@ -68,13 +68,22 @@ inline void blkcpy(ulong *dest, __global ulong * src, uint count)
 	} while (count -= 4);
 }
 
+inline void blkcpy_gp(__global ulong *dest, ulong * src, uint count)
+{
+	__global ulong8 * dest8=(__global ulong8 *) dest;
+	ulong8 * src8=(ulong8 *) src;
+	do {
+		*dest8++ = *src8++;
+	} while (count -= 8);
+}
+
 inline void blkcpy_global(__global ulong *dest, __global ulong * src, uint count)
 {
-	__global ulong4 * dest4=(__global ulong4 *) dest;
-	__global ulong4 * src4=(__global ulong4 *) src;
+	__global ulong8 * dest8=(__global ulong8 *) dest;
+	__global ulong8 * src8=(__global ulong8 *) src;
 	do {
-		*dest4++ = *src4++;
-	} while (count -= 4);
+		*dest8++ = *src8++;
+	} while (count -= 8);
 }
 
 inline void blkxor(__global ulong * dest, __global ulong * src, uint count)
@@ -86,13 +95,41 @@ inline void blkxor(__global ulong * dest, __global ulong * src, uint count)
 	} while (count -= 4);
 }
 
-inline void blkcpy_and_xor(__global ulong *dest, __global ulong * src1, __global ulong * src2, uint count)
+inline void blkxor_pg(ulong * dest, __global ulong * src, uint count)
+{
+	ulong4 * dest4=(ulong4 *) dest;
+	__global ulong4 * src4=(__global ulong4 *) src;
+	do {
+		*dest4++ ^= *src4++;		
+	} while (count -= 4);
+}
+
+inline void blkxor_gp(__global ulong * dest, ulong * src, uint count)
 {
 	__global ulong4 * dest4=(__global ulong4 *) dest;
-	__global ulong4 * src1_4=(__global ulong4 *) src1;
-	__global ulong4 * src2_4=(__global ulong4 *) src2;
+	ulong4 * src4=(ulong4 *) src;
 	do {
-		*dest4++ = *src1_4++ ^ *src2_4++;
+		*dest4++ ^= *src4++;		
+	} while (count -= 4);
+}
+
+inline void blkcpy_and_xor(__global ulong *dest, __global ulong * src1, __global ulong * src2, uint count)
+{
+	__global ulong8 * dest8=(__global ulong8 *) dest;
+	__global ulong8 * src1_8=(__global ulong8 *) src1;
+	__global ulong8 * src2_8=(__global ulong8 *) src2;
+	do {
+		*dest8++ = *src1_8++ ^ *src2_8++;
+	} while (count -= 8);
+}
+
+inline void blkcpy_and_xor_ggp(__global ulong *dest, __global ulong * src1, ulong * src2, uint count)
+{
+	__global ulong8 * dest8=(__global ulong8 *) dest;
+	__global ulong8 * src1_8=(__global ulong8 *) src1;
+	ulong8 * src2_8=(ulong8 *) src2;
+	do {
+		*dest8++ = *src1_8++ ^ *src2_8++;
 	} while (count -= 4);
 }
 
@@ -131,7 +168,38 @@ inline void salsa20_shuffle(salsa20_blk_t * Bin, salsa20_blk_t * Bout)
 #undef COMBINE
 }
 
+inline void salsa20_shuffle_gp(__global salsa20_blk_t * Bin, salsa20_blk_t * Bout)
+{
+#define COMBINE(out, in1, in2) \
+	Bout->d[out] = Bin->w[in1 * 2] | ((ulong)Bin->w[in2 * 2 + 1] << 32);
+	COMBINE(0, 0, 2)
+	COMBINE(1, 5, 7)
+	COMBINE(2, 2, 4)
+	COMBINE(3, 7, 1)
+	COMBINE(4, 4, 6)
+	COMBINE(5, 1, 3)
+	COMBINE(6, 6, 0)
+	COMBINE(7, 3, 5)
+#undef COMBINE
+}
+
 inline void salsa20_unshuffle(__global salsa20_blk_t * Bin, salsa20_blk_t * Bout)
+{
+#define UNCOMBINE(out, in1, in2) \
+	Bout->w[out * 2] = Bin->d[in1]; \
+	Bout->w[out * 2 + 1] = Bin->d[in2] >> 32;
+	UNCOMBINE(0, 0, 6)
+	UNCOMBINE(1, 5, 3)
+	UNCOMBINE(2, 2, 0)
+	UNCOMBINE(3, 7, 5)
+	UNCOMBINE(4, 4, 2)
+	UNCOMBINE(5, 1, 7)
+	UNCOMBINE(6, 6, 4)
+	UNCOMBINE(7, 3, 1)
+#undef UNCOMBINE
+}
+
+inline void salsa20_unshuffle_p(salsa20_blk_t * Bin, salsa20_blk_t * Bout)
 {
 #define UNCOMBINE(out, in1, in2) \
 	Bout->w[out * 2] = Bin->d[in1]; \
@@ -218,6 +286,57 @@ void salsa20_8(__global ulong *B)
 	}
 }
 
+void salsa20_8_p(ulong *B)
+{
+	size_t i;
+	salsa20_blk_t X;
+#define x X.w
+
+	salsa20_unshuffle_p((salsa20_blk_t *)B, &X);
+
+	for (i = 0; i < 8; i += 2) {
+#define R(a,b) (((a) << (b)) | ((a) >> (32 - (b))))
+		/* Operate on columns */
+		x[ 4] ^= R(x[ 0]+x[12], 7);  x[ 8] ^= R(x[ 4]+x[ 0], 9);
+		x[12] ^= R(x[ 8]+x[ 4],13);  x[ 0] ^= R(x[12]+x[ 8],18);
+
+		x[ 9] ^= R(x[ 5]+x[ 1], 7);  x[13] ^= R(x[ 9]+x[ 5], 9);
+		x[ 1] ^= R(x[13]+x[ 9],13);  x[ 5] ^= R(x[ 1]+x[13],18);
+
+		x[14] ^= R(x[10]+x[ 6], 7);  x[ 2] ^= R(x[14]+x[10], 9);
+		x[ 6] ^= R(x[ 2]+x[14],13);  x[10] ^= R(x[ 6]+x[ 2],18);
+
+		x[ 3] ^= R(x[15]+x[11], 7);  x[ 7] ^= R(x[ 3]+x[15], 9);
+		x[11] ^= R(x[ 7]+x[ 3],13);  x[15] ^= R(x[11]+x[ 7],18);
+
+		/* Operate on rows */
+		x[ 1] ^= R(x[ 0]+x[ 3], 7);  x[ 2] ^= R(x[ 1]+x[ 0], 9);
+		x[ 3] ^= R(x[ 2]+x[ 1],13);  x[ 0] ^= R(x[ 3]+x[ 2],18);
+
+		x[ 6] ^= R(x[ 5]+x[ 4], 7);  x[ 7] ^= R(x[ 6]+x[ 5], 9);
+		x[ 4] ^= R(x[ 7]+x[ 6],13);  x[ 5] ^= R(x[ 4]+x[ 7],18);
+
+		x[11] ^= R(x[10]+x[ 9], 7);  x[ 8] ^= R(x[11]+x[10], 9);
+		x[ 9] ^= R(x[ 8]+x[11],13);  x[10] ^= R(x[ 9]+x[ 8],18);
+
+		x[12] ^= R(x[15]+x[14], 7);  x[13] ^= R(x[12]+x[15], 9);
+		x[14] ^= R(x[13]+x[12],13);  x[15] ^= R(x[14]+x[13],18);
+#undef R
+	}
+#undef x
+
+	{
+		salsa20_blk_t Y;
+		salsa20_shuffle(&X, &Y);
+		for (i = 0; i < 16; i += 4) {
+			((salsa20_blk_t *)B)->w[i] += Y.w[i];
+			((salsa20_blk_t *)B)->w[i + 1] += Y.w[i + 1];
+			((salsa20_blk_t *)B)->w[i + 2] += Y.w[i + 2];
+			((salsa20_blk_t *)B)->w[i + 3] += Y.w[i + 3];
+		}
+	}
+}
+
 /**
  * blockmix_salsa8(Bin, Bout, X, r):
  * Compute Bout = BlockMix_{salsa20/8, r}(Bin).  The input Bin must be 128r
@@ -251,6 +370,60 @@ void blockmix_salsa8(__global ulong * Bin, __global ulong * Bout, __global ulong
 	}
 }
 
+
+void blockmix_salsa8_p(ulong * Bin, __global ulong * Bout, __global ulong * X, uint r)
+{
+	size_t i;
+
+	/* 1: X <-- B_{2r - 1} */
+	blkcpy_gp(X, &Bin[(2 * r - 1) * 8], 8);
+
+	/* 2: for i = 0 to 2r - 1 do */
+	for (i = 0; i < 2 * r; i += 2) {
+		/* 3: X <-- H(X \xor B_i) */
+		blkxor_gp(X, &Bin[i * 8], 8);
+		salsa20_8(X);
+
+		/* 4: Y_i <-- X */
+		/* 6: B' <-- (Y_0, Y_2 ... Y_{2r-2}, Y_1, Y_3 ... Y_{2r-1}) */
+		blkcpy_global(&Bout[i * 4], X, 8);
+
+		/* 3: X <-- H(X \xor B_i) */
+		blkxor_gp(X, &Bin[i * 8 + 8], 8);
+		salsa20_8(X);
+
+		/* 4: Y_i <-- X */
+		/* 6: B' <-- (Y_0, Y_2 ... Y_{2r-2}, Y_1, Y_3 ... Y_{2r-1}) */
+		blkcpy_global(&Bout[i * 4 + r * 8], X, 8);
+	}
+}
+
+void blockmix_salsa8_ggp(__global ulong * Bin, __global ulong * Bout, ulong * X, uint r)
+{
+	size_t i;
+
+	/* 1: X <-- B_{2r - 1} */
+	blkcpy(X, &Bin[(2 * r - 1) * 8], 8);
+
+	/* 2: for i = 0 to 2r - 1 do */
+	for (i = 0; i < 2 * r; i += 2) {
+		/* 3: X <-- H(X \xor B_i) */
+		blkxor_pg(X, &Bin[i * 8], 8);
+		salsa20_8_p(X);
+
+		/* 4: Y_i <-- X */
+		/* 6: B' <-- (Y_0, Y_2 ... Y_{2r-2}, Y_1, Y_3 ... Y_{2r-1}) */
+		blkcpy_gp(&Bout[i * 4], X, 8);
+
+		/* 3: X <-- H(X \xor B_i) */
+		blkxor_pg(X, &Bin[i * 8 + 8], 8);
+		salsa20_8_p(X);
+
+		/* 4: Y_i <-- X */
+		/* 6: B' <-- (Y_0, Y_2 ... Y_{2r-2}, Y_1, Y_3 ... Y_{2r-1}) */
+		blkcpy_gp(&Bout[i * 4 + r * 8], X, 8);
+	}
+}
 
 /**
  * pwxform(B):
@@ -294,6 +467,94 @@ void pwxform(__global ulong * B, __global ulong * S)
 			ulong p0_copy[PWXsimple];
 			ulong p1_copy[PWXsimple];
 
+			for(k=0;k<PWXsimple;k++)
+				p0_copy[k]=p0[k];
+
+			for(k=0;k<PWXsimple;k++)
+				p1_copy[k]=p1[k];
+
+			/* 5: for k = 0 to PWXsimple do */
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S 0_{p0,k}) \xor S1_{p1,k} */
+			x0 = (ulong)(x0 >> 32) * (uint)x0;
+			x0 += p0_copy[0];
+			x0 ^= p1_copy[0];
+
+#if PWXsimple > 1
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+			x1 = (ulong)(x1 >> 32) * (uint)x1;
+			x1 += p0_copy[1];
+			x1 ^= p1_copy[1];
+#endif
+
+#if PWXsimple > 2
+			/* 5: for k = 0 to PWXsimple do */
+			for (k = 2; k < PWXsimple; k++) {
+				/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+				x = 1;
+
+				x = (ulong)(x >> 32) * (uint)x;
+				x += p0_copy[k];
+				x ^= p1_copy[k];
+
+				XX[PWXsimple*j+k] = x;
+			}
+#endif
+		}
+
+		XX[PWXsimple*j] = x0;
+#if PWXsimple > 1
+		XX[PWXsimple*j+1] = x1;
+#endif
+	}
+
+
+#if (PWXsimple*PWXgather)%8==0
+	((__global ulong8 *)B)[0]=XX8[0];
+#else
+	for(i=0;i<PWXsimple*PWXgather;i++)
+		B[i]=XX[i];
+#endif
+	
+}
+
+void pwxform_gp(__global ulong * B, ulong * S)
+{
+	uchar *S0 = (uchar *)S;
+	uchar *S1 = (uchar *)S + Sbytes / 2;
+	uint i, j;
+	uint k;
+
+	ulong XX[PWXsimple*PWXgather];
+
+#if (PWXsimple*PWXgather)%8==0
+	ulong8 *XX8=(ulong8 *)XX;
+	XX8[0]=((__global ulong8 *)B)[0];
+#else
+	for(i=0;i<PWXsimple*PWXgather;i++)
+		XX[i]=B[i];
+#endif
+
+	/* 2: for j = 0 to PWXgather do */
+	for (j = 0; j < PWXgather; j++) {
+		
+		ulong x0 = XX[PWXsimple*j];
+#if PWXsimple > 1
+		ulong x1 = XX[PWXsimple*j+1];
+#endif
+
+		/* 1: for i = 0 to PWXrounds do */
+		for (i = 0; i < PWXrounds; i++) {
+			ulong x = x0 & Smask2;
+			ulong *p0, *p1;
+
+			/* 3: p0 <-- (lo(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p0 = (ulong *)(S0 + (uint)x);
+			/* 4: p1 <-- (hi(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p1 = (ulong *)(S1 + (x >> 32));
+
+			ulong p0_copy[PWXsimple];
+			ulong p1_copy[PWXsimple];
+//pomidor
 			for(k=0;k<PWXsimple;k++)
 				p0_copy[k]=p0[k];
 
@@ -418,6 +679,138 @@ void blockmix_pwxform(__global ulong * Bin, __global ulong * Bout, __global ulon
 	}
 }
 
+void blockmix_pwxform_p(ulong * Bin, __global ulong * Bout, __global ulong * S, uint r)
+{
+	uint r1, r2, i;
+
+	/* Convert 128-byte blocks to PWXbytes blocks */
+	/* 1: r_1 <-- 128r / PWXbytes */
+	r1 = r * 128 / PWXbytes;
+
+	/* 2: X <-- B'_{r_1 - 1} */
+	blkcpy_gp(Bout, &Bin[(r1 - 1) * PWXwords], PWXwords);
+
+	/* 3: for i = 0 to r_1 - 1 do */
+	/* 4: if r_1 > 1 */
+	if (r1 > 1) {
+		/* 5: X <-- X \xor B'_i */
+		blkxor_gp(Bout, Bin, PWXwords);
+	}
+
+	/* 7: X <-- pwxform(X) */
+	/* 8: B'_i <-- X */
+	pwxform(Bout, S);
+
+	/* 3: for i = 0 to r_1 - 1 do */
+	for (i = 1; i < r1; i++) {
+		/* 5: X <-- X \xor B'_i */
+		blkcpy_and_xor_ggp(&Bout[i * PWXwords], &Bout[(i - 1) * PWXwords], &Bin[i * PWXwords], PWXwords);
+	
+		/* 7: X <-- pwxform(X) */
+		/* 8: B'_i <-- X */
+		pwxform(&Bout[i * PWXwords], S);
+	}
+
+#if PWXbytes > 128
+	/*
+	 * Handle partial blocks.  If we were using just one buffer, like in
+	 * the algorithm specification, the data would already be there, but
+	 * since we use separate input and output buffers, we may have to copy
+	 * some data over (which will then be processed by the Salsa20/8
+	 * invocations below) in this special case - that is, when 128r is not
+	 * a multiple of PWXbytes.  Since PWXgather and PWXsimple must each be
+	 * a power of 2 (per the specification), PWXbytes is also a power of 2.
+	 * Thus, 128r is obviously a multiple of valid values of PWXbytes up to
+	 * 128, inclusive.  When PWXbytes is larger than that (thus, 256 or
+	 * larger) we perform this extra check.
+	 */
+	if (i * PWXwords < r * 16)
+		blkcpy(&Bout[i * PWXwords], &Bin[i * PWXwords],
+		    r * 16 - i * PWXwords);
+#endif
+
+	/* 10: i <-- floor((r_1 - 1) * PWXbytes / 64) */
+	i = (r1 - 1) * PWXbytes / 64;
+
+	/* Convert 128-byte blocks to 64-byte blocks */
+	r2 = r * 2;
+
+	/* 11: B_i <-- H(B_i) */
+	salsa20_8(&Bout[i * 8]);
+
+	for (i++; i < r2; i++) {
+		/* 13: B_i <-- H(B_i \xor B_{i-1}) */
+		blkxor(&Bout[i * 8], &Bout[(i - 1) * 8], 8);
+		salsa20_8(&Bout[i * 8]);
+	}
+}
+
+void blockmix_pwxform_ggp(__global ulong * Bin, __global ulong * Bout, ulong * S, uint r)
+{
+	uint r1, r2, i;
+
+	/* Convert 128-byte blocks to PWXbytes blocks */
+	/* 1: r_1 <-- 128r / PWXbytes */
+	r1 = r * 128 / PWXbytes;
+
+	/* 2: X <-- B'_{r_1 - 1} */
+	blkcpy_global(Bout, &Bin[(r1 - 1) * PWXwords], PWXwords);
+
+	/* 3: for i = 0 to r_1 - 1 do */
+	/* 4: if r_1 > 1 */
+	if (r1 > 1) {
+		/* 5: X <-- X \xor B'_i */
+		blkxor(Bout, Bin, PWXwords);
+	}
+
+	/* 7: X <-- pwxform(X) */
+	/* 8: B'_i <-- X */
+	pwxform_gp(Bout, S);
+
+	/* 3: for i = 0 to r_1 - 1 do */
+	for (i = 1; i < r1; i++) {
+		/* 5: X <-- X \xor B'_i */
+		blkcpy_and_xor(&Bout[i * PWXwords], &Bout[(i - 1) * PWXwords], &Bin[i * PWXwords], PWXwords);
+	
+		/* 7: X <-- pwxform(X) */
+		/* 8: B'_i <-- X */
+		pwxform_gp(&Bout[i * PWXwords], S);
+	}
+
+#if PWXbytes > 128
+	/*
+	 * Handle partial blocks.  If we were using just one buffer, like in
+	 * the algorithm specification, the data would already be there, but
+	 * since we use separate input and output buffers, we may have to copy
+	 * some data over (which will then be processed by the Salsa20/8
+	 * invocations below) in this special case - that is, when 128r is not
+	 * a multiple of PWXbytes.  Since PWXgather and PWXsimple must each be
+	 * a power of 2 (per the specification), PWXbytes is also a power of 2.
+	 * Thus, 128r is obviously a multiple of valid values of PWXbytes up to
+	 * 128, inclusive.  When PWXbytes is larger than that (thus, 256 or
+	 * larger) we perform this extra check.
+	 */
+	if (i * PWXwords < r * 16)
+		blkcpy(&Bout[i * PWXwords], &Bin[i * PWXwords],
+		    r * 16 - i * PWXwords);
+#endif
+
+	/* 10: i <-- floor((r_1 - 1) * PWXbytes / 64) */
+	i = (r1 - 1) * PWXbytes / 64;
+
+	/* Convert 128-byte blocks to 64-byte blocks */
+	r2 = r * 2;
+
+	/* 11: B_i <-- H(B_i) */
+	salsa20_8(&Bout[i * 8]);
+
+	for (i++; i < r2; i++) {
+		/* 13: B_i <-- H(B_i \xor B_{i-1}) */
+		blkxor(&Bout[i * 8], &Bout[(i - 1) * 8], 8);
+		salsa20_8(&Bout[i * 8]);
+	}
+}
+
 /**
  * integerify(B, r):
  * Return the result of parsing B_{2r-1} as a little-endian integer.
@@ -449,6 +842,18 @@ inline ulong integerify(__global ulong * B, uint r)
 			blockmix_pwxform(A,B,C,r);	\
 		else					\
 			blockmix_salsa8(A,B,C,r);
+
+#define blockmix_p(A,B,C,r)				\
+		if(S)					\
+			blockmix_pwxform_p(A,B,C,r);	\
+		else					\
+			blockmix_salsa8_p(A,B,C,r);
+
+#define blockmix_ggp(A,B,C,r)				\
+		if(S)					\
+			blockmix_pwxform_ggp(A,B,C,r);	\
+		else					\
+			blockmix_salsa8_ggp(A,B,C,r);
 
 
 
@@ -573,6 +978,249 @@ void smix1(__global ulong * B, uint r, ulong N, uint flags,
 	}
 }
 
+void smix1_2(__global ulong * B, uint r, ulong N, uint flags,
+    ulong * V, ulong NROM, __global ulong * VROM,
+    __global ulong * XY, __global ulong * S)
+{
+	uint s = 16 * r;
+	__global ulong * X;
+	__global ulong * Y = &XY[s];
+	__global ulong * Z = S ? S : &XY[2 * s];
+	ulong n, i, j;
+	size_t k;
+
+	/* 1: X <-- B */
+	/* 3: V_i <-- X */
+	for (i = 0; i < 2 * r; i++) { //size=r*2*9=r*18 -B,V
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&B[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		salsa20_blk_t *dst = (salsa20_blk_t *)&V[i * 8];
+		for (k = 0; k < 16; k++)
+			tmp->w[k] = le32dec(&src->w[k]);
+		salsa20_shuffle_gp(tmp, dst);
+	}
+
+	/* 4: X <-- H(X) */
+	/* 3: V_i <-- X */
+	blockmix_p(V, Y, Z, r);
+	blkcpy(&V[s], Y, s);
+
+	X = XY;
+
+	if (VROM) {
+		/* j <-- Integerify(X) mod NROM */
+		j = integerify(Y, r) & (NROM - 1);
+
+		/* X <-- H(X \xor VROM_j) */
+		blkxor(Y, &VROM[j * s], s);
+
+		blockmix_pwxform(Y, X, Z, r);
+
+		/* 2: for i = 0 to N - 1 do */
+		for (n = 1, i = 2; i < N; i += 2) {
+			/* 3: V_i <-- X */
+			blkcpy(&V[i * s], X, s);
+
+			if ((i & (i - 1)) == 0)
+				n <<= 1;
+
+			/* j <-- Wrap(Integerify(X), i) */
+			j = integerify(X, r) & (n - 1);
+			j += i - n;
+
+			/* X <-- X \xor V_j */
+			blkxor_gp(X, &V[j * s], s);
+
+			/* 4: X <-- H(X) */
+			blockmix_pwxform(X, Y, Z, r);
+
+			/* 3: V_i <-- X */
+			blkcpy(&V[(i + 1) * s], Y, s);
+
+			/* j <-- Integerify(X) mod NROM */
+			j = integerify(Y, r) & (NROM - 1);
+
+			/* X <-- H(X \xor VROM_j) */
+			blkxor(Y, &VROM[j * s], s);
+
+			blockmix_pwxform(Y, X, Z, r);
+		}
+	} else {
+		uint rw = flags & YESCRYPT_RW;
+
+		/* 4: X <-- H(X) */
+		blockmix(Y, X, Z, r);
+
+		/* 2: for i = 0 to N - 1 do */
+		for (n = 1, i = 2; i < N; i += 2) {
+			/* 3: V_i <-- X */
+			blkcpy(&V[i * s], X, s);
+
+			if (rw) {
+				if ((i & (i - 1)) == 0)
+					n <<= 1;
+
+				/* j <-- Wrap(Integerify(X), i) */
+				j = integerify(X, r) & (n - 1);
+				j += i - n;
+
+				/* X <-- X \xor V_j */
+				blkxor_gp(X, &V[j * s], s);
+			}
+
+			/* 4: X <-- H(X) */
+			blockmix(X, Y, Z, r);
+
+			/* 3: V_i <-- X */
+			blkcpy(&V[(i + 1) * s], Y, s);
+
+			if (rw) {
+				/* j <-- Wrap(Integerify(X), i) */
+				j = integerify(Y, r) & (n - 1);
+				j += (i + 1) - n;
+
+				/* X <-- X \xor V_j */
+				blkxor_gp(Y, &V[j * s], s);
+			}
+
+			/* 4: X <-- H(X) */
+			blockmix(Y, X, Z, r);
+		}
+	}
+
+	/* B' <-- X */
+	for (i = 0; i < 2 * r; i++) {
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&X[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		__global salsa20_blk_t *dst = (__global salsa20_blk_t *)&B[i * 8];
+		for (k = 0; k < 16; k++)
+			le32enc(&tmp->w[k], src->w[k]);
+		salsa20_unshuffle_global(tmp, dst);
+	}
+}
+
+void smix1_3(__global ulong * B, uint r, ulong N, uint flags,
+    __global ulong * V, ulong NROM, __global ulong * VROM,
+    __global ulong * XY, ulong * S)
+{
+	uint s = 16 * r;
+	__global ulong * X = V;
+	__global ulong * Y = &XY[s];
+	//__global ulong * Z = S ? S : &XY[2 * s];
+	ulong *Z=S;
+	ulong n, i, j;
+	size_t k;
+
+	/* 1: X <-- B */
+	/* 3: V_i <-- X */
+	for (i = 0; i < 2 * r; i++) { //size=r*2*9=r*18 -B,V
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&B[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		__global salsa20_blk_t *dst = (__global salsa20_blk_t *)&X[i * 8];
+		for (k = 0; k < 16; k++)
+			tmp->w[k] = le32dec(&src->w[k]);
+		salsa20_shuffle_global(tmp, dst);
+	}
+
+	/* 4: X <-- H(X) */
+	/* 3: V_i <-- X */
+	blockmix_ggp(X, Y, Z, r);
+	blkcpy_global(&V[s], Y, s);
+
+	X = XY;
+
+	if (VROM) {
+		/* j <-- Integerify(X) mod NROM */
+		j = integerify(Y, r) & (NROM - 1);
+
+		/* X <-- H(X \xor VROM_j) */
+		blkxor(Y, &VROM[j * s], s);
+
+		blockmix_pwxform_ggp(Y, X, Z, r);
+
+		/* 2: for i = 0 to N - 1 do */
+		for (n = 1, i = 2; i < N; i += 2) {
+			/* 3: V_i <-- X */
+			blkcpy_global(&V[i * s], X, s);
+
+			if ((i & (i - 1)) == 0)
+				n <<= 1;
+
+			/* j <-- Wrap(Integerify(X), i) */
+			j = integerify(X, r) & (n - 1);
+			j += i - n;
+
+			/* X <-- X \xor V_j */
+			blkxor(X, &V[j * s], s);
+
+			/* 4: X <-- H(X) */
+			blockmix_pwxform_ggp(X, Y, Z, r);
+
+			/* 3: V_i <-- X */
+			blkcpy_global(&V[(i + 1) * s], Y, s);
+
+			/* j <-- Integerify(X) mod NROM */
+			j = integerify(Y, r) & (NROM - 1);
+
+			/* X <-- H(X \xor VROM_j) */
+			blkxor(Y, &VROM[j * s], s);
+
+			blockmix_pwxform_ggp(Y, X, Z, r);
+		}
+	} else {
+		uint rw = flags & YESCRYPT_RW;
+
+		/* 4: X <-- H(X) */
+		blockmix_ggp(Y, X, Z, r);
+
+		/* 2: for i = 0 to N - 1 do */
+		for (n = 1, i = 2; i < N; i += 2) {
+			/* 3: V_i <-- X */
+			blkcpy_global(&V[i * s], X, s);
+
+			if (rw) {
+				if ((i & (i - 1)) == 0)
+					n <<= 1;
+
+				/* j <-- Wrap(Integerify(X), i) */
+				j = integerify(X, r) & (n - 1);
+				j += i - n;
+
+				/* X <-- X \xor V_j */
+				blkxor(X, &V[j * s], s);
+			}
+
+			/* 4: X <-- H(X) */
+			blockmix_ggp(X, Y, Z, r);
+
+			/* 3: V_i <-- X */
+			blkcpy_global(&V[(i + 1) * s], Y, s);
+
+			if (rw) {
+				/* j <-- Wrap(Integerify(X), i) */
+				j = integerify(Y, r) & (n - 1);
+				j += (i + 1) - n;
+
+				/* X <-- X \xor V_j */
+				blkxor(Y, &V[j * s], s);
+			}
+
+			/* 4: X <-- H(X) */
+			blockmix_ggp(Y, X, Z, r);
+		}
+	}
+
+	/* B' <-- X */
+	for (i = 0; i < 2 * r; i++) {
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&X[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		__global salsa20_blk_t *dst = (__global salsa20_blk_t *)&B[i * 8];
+		for (k = 0; k < 16; k++)
+			le32enc(&tmp->w[k], src->w[k]);
+		salsa20_unshuffle_global(tmp, dst);
+	}
+}
+
 /**
  * smix2(B, r, N, Nloop, flags, V, NROM, VROM, XY, S):
  * Compute second loop of B = SMix_r(B, N).  The input B must be 128r bytes in
@@ -667,6 +1315,94 @@ smix2(__global ulong * B, uint r, ulong N, ulong Nloop,
 	}
 }
 
+static void
+smix2_2(__global ulong * B, uint r, ulong N, ulong Nloop,
+      uint flags,
+    __global ulong * V, ulong NROM, __global ulong * VROM,
+    __global ulong * XY, ulong * S)
+{
+	uint s = 16 * r;
+	uint rw = flags & YESCRYPT_RW;
+	__global ulong * X = XY;
+	__global ulong * Y = &XY[s];
+	//__global ulong * Z = S ? S : &XY[2 * s];
+	ulong * Z = S;
+	ulong i, j;
+	uint k;
+
+	if (Nloop == 0)
+		return;
+
+	/* X <-- B' */
+	for (i = 0; i < 2 * r; i++) {
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&B[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		__global salsa20_blk_t *dst = (__global salsa20_blk_t *)&X[i * 8];
+		for (k = 0; k < 16; k++)
+			tmp->w[k] = le32dec(&src->w[k]);
+		salsa20_shuffle_global(tmp, dst);
+	}
+
+	if (VROM) {
+		/* 6: for i = 0 to N - 1 do */
+		for (i = 0; i < Nloop; i += 2) {
+			/* 7: j <-- Integerify(X) mod N */
+			j = integerify(X, r) & (N - 1);
+
+			/* 8: X <-- H(X \xor V_j) */
+			blkxor(X, &V[j * s], s);
+			/* V_j <-- Xprev \xor V_j */
+			if (rw)
+				blkcpy_global(&V[j * s], X, s);
+			blockmix_pwxform_ggp(X, Y, Z, r);
+
+			/* j <-- Integerify(X) mod NROM */
+			j = integerify(Y, r) & (NROM - 1);
+
+			/* X <-- H(X \xor VROM_j) */
+			blkxor(Y, &VROM[j * s], s);
+
+			blockmix_pwxform_ggp(Y, X, Z, r);
+		}
+	} else {
+
+		/* 6: for i = 0 to N - 1 do */
+		i = Nloop / 2;
+		do {
+			/* 7: j <-- Integerify(X) mod N */
+			j = integerify(X, r) & (N - 1);
+
+			/* 8: X <-- H(X \xor V_j) */
+			blkxor(X, &V[j * s], s);
+			/* V_j <-- Xprev \xor V_j */
+			if (rw)
+				blkcpy_global(&V[j * s], X, s);
+			blockmix_ggp(X, Y, Z, r);
+
+			/* 7: j <-- Integerify(X) mod N */
+			j = integerify(Y, r) & (N - 1);
+
+			/* 8: X <-- H(X \xor V_j) */
+			blkxor(Y, &V[j * s], s);
+			/* V_j <-- Xprev \xor V_j */
+			if (rw)
+				blkcpy_global(&V[j * s], Y, s);
+			blockmix_ggp(Y, X, Z, r);
+		} while (--i);
+	}
+
+	/* 10: B' <-- X */
+	for (i = 0; i < 2 * r; i++) {
+		__global salsa20_blk_t *src = (__global salsa20_blk_t *)&X[i * 8];
+		__global salsa20_blk_t *tmp = (__global salsa20_blk_t *)Y;
+		__global salsa20_blk_t *dst = (__global salsa20_blk_t *)&B[i * 8];
+		for (k = 0; k < 16; k++)
+			le32enc(&tmp->w[k], src->w[k]);
+		salsa20_unshuffle_global(tmp, dst);
+	}
+}
+
+
 /**
  * p2floor(x):
  * Largest power of 2 not greater than argument.
@@ -687,6 +1423,21 @@ ulong p2floor(ulong x)
  * required with OpenMP-enabled builds).  The value N must be a power of 2
  * greater than 1.
  */
+
+#define SP_COPY 1
+
+#ifdef SP_COPY
+#define SMIX1 smix1_2
+#define SMIX1_3 smix1_3
+#define SMIX2 smix2_2
+#define SP Sp_copy
+#else
+#define SMIX1 smix1
+#define SMIX1_3 smix1
+#define SMIX2 smix2
+#define SP Sp
+#endif
+
 void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
     uint flags,
     __global ulong * V, ulong NROM, __global ulong * VROM,
@@ -694,7 +1445,7 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 {
 	uint s = 16 * r;
 	ulong Nchunk, Nloop_all, Nloop_rw;
-	uint i;
+	uint i,j;
 
 	/* 1: n <-- N / p */
 	Nchunk = N / p;
@@ -740,6 +1491,11 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 	{
 #pragma omp for
 #endif*/
+
+#ifdef SP_COPY
+	ulong Sp_copy[Swords];
+#endif
+
 	for (i = 0; i < p; i++) {
 		/* 12: v <-- in */
 		ulong Vchunk = i * Nchunk;
@@ -757,19 +1513,50 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 /*#endif*/
 		/* 17: if YESCRYPT_RW flag is set */
 		__global ulong * Sp = S ? &S[i * Swords] : S;
+
+	#ifdef SP_COPY
+		if(Sp)
+		#if (Sbytes / 8)%16==0
+			for(j=0;j<Swords/16;j++)
+				((ulong16*)Sp_copy)[j]=((__global ulong16*)Sp)[j];
+		#else 
+			for(j=0;j<Swords;j++)
+				Sp_copy[j]=Sp[j];
+		#endif
+	#endif
+
 		if (Sp) {
 			/* 18: SMix1_1(B_i, Sbytes / 128, S_i, flags excluding YESCRYPT_RW) */
-			smix1(Bp, 1, Sbytes / 128,
+			SMIX1(Bp, 1, Sbytes / 128,
 			    flags & ~YESCRYPT_RW,
-			    Sp, 0, NULL, XYp, NULL);
+			    SP, 0, NULL, XYp, NULL);
 		}
+
 		if (!(flags & __YESCRYPT_INIT_SHARED_2)) {
 			/* 20: SMix1_r(B_i, n, V_{v..w}, flags) */
-			smix1(Bp, r, Np, flags, Vp, NROM, VROM, XYp, Sp);
+			if(Sp)
+				SMIX1_3(Bp, r, Np, flags, Vp, NROM, VROM, XYp, SP);
+			else
+				smix1(Bp, r, Np, flags, Vp, NROM, VROM, XYp, Sp);
 		}
 		/* 21: SMix2_r(B_i, p2floor(n), Nloop_rw, V_{v..w}, flags) */
-		smix2(Bp, r, p2floor(Np), Nloop_rw, flags, Vp,
-		    NROM, VROM, XYp, Sp);
+		if(Sp)
+			SMIX2(Bp, r, p2floor(Np), Nloop_rw, flags, Vp,
+			    NROM, VROM, XYp, SP);
+		else
+			smix2(Bp, r, p2floor(Np), Nloop_rw, flags, Vp,
+			    NROM, VROM, XYp, Sp);
+
+	#ifdef SP_COPY
+		if(Sp)
+		#if (Sbytes / 8)%16==0
+			for(j=0;j<Swords/16;j++)
+				((__global ulong16*)Sp)[j]=((ulong16*)Sp_copy)[j];
+		#else 
+			for(j=0;j<Swords;j++)
+				Sp[j]=Sp_copy[j];
+		#endif
+	#endif
 	}
 
 	/* 23: for i = 0 to p - 1 do */
@@ -779,14 +1566,37 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 #endif*/
 		for (i = 0; i < p; i++) {
 			__global ulong * Bp = &B[i * s];
+			__global ulong * XYp = XY;
+			__global ulong * Sp = S ? &S[i * Swords] : S;
 /*#ifdef _OPENMP
 			ulong * XYp = &XY[i * (2 * s + 8)];
 #else*/
-			__global ulong * XYp = XY;
-			__global ulong * Sp = S ? &S[i * Swords] : S;
+
+		#ifdef SP_COPY
+			if(Sp)
+			#if (Sbytes / 8)%16==0
+				for(j=0;j<Swords/16;j++)
+					((ulong16*)Sp_copy)[j]=((__global ulong16*)Sp)[j];
+			#else 
+				for(j=0;j<Swords;j++)
+					Sp_copy[j]=Sp[j];
+			#endif
+		#endif
+
+
 			/* 24: SMix2_r(B_i, N, Nloop_all - Nloop_rw, V, flags excluding YESCRYPT_RW) */
-			smix2(Bp, r, N, Nloop_all - Nloop_rw,
-			    flags & ~YESCRYPT_RW, V, NROM, VROM, XYp, Sp);
+			if(Sp)
+				SMIX2(Bp, r, N, Nloop_all - Nloop_rw,
+				    flags & ~YESCRYPT_RW, V, NROM, VROM, XYp, SP);
+			else
+				smix2(Bp, r, N, Nloop_all - Nloop_rw,
+				    flags & ~YESCRYPT_RW, V, NROM, VROM, XYp, Sp);
+		/*#ifdef SP_COPY
+			if(Sp)
+				for(j=0;j<Swords;j++)
+					Sp[j]=Sp_copy[j];
+		#endif*/
+		//works without copying back 
 		}
 	}
 }
@@ -964,7 +1774,6 @@ __kernel void yescrypt_crypt_kernel(__global const uchar * in,
 	long B_size=128*r*p;
 	long XY_size=256*r+64;
 	long S_size = Sbytes * p;
-	long need;
 
 	for(i=0;i<passwdlen;i++)
 		passwd[i]=in[i];

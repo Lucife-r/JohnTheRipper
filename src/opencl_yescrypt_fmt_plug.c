@@ -93,7 +93,7 @@ static cl_mem pinned_key, pinned_idx, pinned_result,
 static char *output;
 static struct yescrypt_salt *saved_salt;
 static char *saved_key;
-static ulong N,r,p,g;
+static uint64_t N,r,p,g;
 static yescrypt_flags_t flags;
 static yescrypt_flags_t saved_flags;
 
@@ -146,10 +146,10 @@ static void print_memory(double memory)
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
-	long V_size=128*r*(N<<(g*2));
-	long B_size=128*r*p;
-	long XY_size=256*r+64;
-	long S_size=Sbytes * p;
+	uint64_t V_size=128*r*(N<<(g*2));
+	uint64_t B_size=128*r*p;
+	uint64_t XY_size=256*r+64;
+	uint64_t S_size=Sbytes * p;
 
 
 	cl_V = cl_B = cl_XY = cl_S = NULL;
@@ -305,11 +305,11 @@ static void done(void)
 
 static void reset_()
 {
-	long V_size=128*r*(N<<(g*2));
-	long B_size=128*r*p;
-	long XY_size=256*r+64;
-	long S_size=Sbytes * p;
-	ulong need;
+	uint64_t V_size=128*r*(N<<(g*2));
+	uint64_t B_size=128*r*p;
+	uint64_t XY_size=256*r+64;
+	uint64_t S_size=Sbytes * p;
+	uint64_t need;
 
 	char build_opts[128];
 
@@ -335,11 +335,11 @@ static void reset_()
 
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, 1, need);
+	    warn, 4, self, create_clobj, release_clobj, need/4, 0);
 
 
 	//Auto tune execution from shared/included code.
-	autotune_run(self, 1, 0, 1000);
+	autotune_run(self, 1, 0, 100000000000);
 }
 
 static void reset(struct db_main *db)
