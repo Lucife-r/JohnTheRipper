@@ -4,7 +4,7 @@
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted.
  */
-//#ifdef _OPENMP
+#ifdef _OPENMP
 
 #if FMT_EXTERNS_H
 extern struct fmt_main fmt_lyra2_lm;
@@ -547,6 +547,6 @@ struct fmt_main fmt_lyra2_lm = {
 	}
 };
 
-//#endif
+#endif
 
 #endif //#ifdef _OPENMP 

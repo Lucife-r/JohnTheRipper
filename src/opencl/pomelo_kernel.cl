@@ -153,7 +153,7 @@ struct pomelo_loop{
 	unsigned long to;
 };
 
-/* whole kernel */
+/* whole kernel (unused) */
 __kernel void pomelo_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
@@ -205,7 +205,6 @@ __kernel void pomelo_crypt_kernel(__global const uchar * in,
 
 	mask = (1UL << (8 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/32; 
 	mask1 = (1UL << (10 + M_COST)) - 1;	// mask is used for modulation: modulo size_size/8;
-
 
 
 	//Step 2: Load the password, salt, input/output sizes into the state S
@@ -276,15 +275,14 @@ __kernel void pomelo_init_and_F0(__global const uchar * in,
 	uint gid;
 	uint GID;
 
-	unsigned long i, j, y, from=loop->from;
+	unsigned long i, y, from=loop->from;
 
 	unsigned long i0, i1, i2, i3, i4;
 
-	unsigned long random_number, index_global, index_local;
 	unsigned long mask1;
 	ulong4 v, v1, v2, v3, v4;
 
-	unsigned short int M_COST, T_COST;
+	unsigned short int M_COST;
 	size_t outlen, saltlen;
 
 	uint base, inlen;
@@ -299,9 +297,7 @@ __kernel void pomelo_init_and_F0(__global const uchar * in,
 	outlen = salt->hash_size;
 	saltlen = salt->salt_length;
 
-	T_COST = salt->t_cost;
 	M_COST = salt->m_cost;
-
 
 	in += base;
 
@@ -367,7 +363,7 @@ __kernel void pomelo_G(__global const uchar * in,
 	unsigned long mask, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
-	unsigned short int M_COST, T_COST;
+	unsigned short int M_COST;
 	size_t outlen, saltlen;
 
 	uint base, inlen;
@@ -384,9 +380,7 @@ __kernel void pomelo_G(__global const uchar * in,
 	outlen = salt->hash_size;
 	saltlen = salt->salt_length;
 
-	T_COST = salt->t_cost;
 	M_COST = salt->m_cost;
-
 
 	in += base;
 
@@ -433,7 +427,7 @@ __kernel void pomelo_H(__global const uchar * in,
 	unsigned long mask, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
-	unsigned short int M_COST, T_COST;
+	unsigned short int M_COST;
 	size_t outlen, saltlen;
 
 	uint base, inlen;
@@ -450,9 +444,7 @@ __kernel void pomelo_H(__global const uchar * in,
 	outlen = salt->hash_size;
 	saltlen = salt->salt_length;
 
-	T_COST = salt->t_cost;
 	M_COST = salt->m_cost;
-
 
 	in += base;
 
@@ -488,15 +480,14 @@ __kernel void pomelo_F_and_out(__global const uchar * in,
 	uint gid;
 	uint GID;
 
-	unsigned long i, j, y;
+	unsigned long i, y;
 
 	unsigned long i0, i1, i2, i3, i4;
 
-	unsigned long random_number, index_global, index_local;
 	unsigned long state_size, mask1;
 	ulong4 v, v1, v2, v3, v4;
 
-	unsigned short int M_COST, T_COST;
+	unsigned short int M_COST;
 	size_t outlen, saltlen;
 
 	uint base, inlen;
@@ -513,9 +504,7 @@ __kernel void pomelo_F_and_out(__global const uchar * in,
 	outlen = salt->hash_size;
 	saltlen = salt->salt_length;
 
-	T_COST = salt->t_cost;
 	M_COST = salt->m_cost;
-
 
 	in += base;
 

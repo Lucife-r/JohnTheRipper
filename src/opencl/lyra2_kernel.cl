@@ -24,7 +24,7 @@
 #include "opencl_lyra2.h"
 #include "opencl_Sponge_Lyra2.h"
 
-struct lyra2_salt {
+static struct lyra2_salt {
 	unsigned int t_cost, m_cost;
 	unsigned int nCols, nParallel;
 	unsigned int hash_size;
@@ -46,7 +46,7 @@ struct lyra2_salt {
 
 #define memcpy(dst, src, size) gmemcpy(dst, src, size)
 
-void lyra2_initState(__global ulong * state)
+static void lyra2_initState(__global ulong * state)
 {
 	int threadNumber;
 	ulong start;
@@ -90,7 +90,7 @@ inline static void spongeLyra(ulong * v)
 	}
 }
 
-inline void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
+inline static void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
 {
 	//XORs the first BLOCK_LEN_BLAKE2_SAFE_INT64 words of "in" with the current state
 	state[0] ^= in[0];
@@ -106,7 +106,7 @@ inline void absorbBlockBlake2Safe(ulong * state, __global ulong * in)
 	spongeLyra(state);
 }
 
-void lyra2_absorbInput(__global ulong * memMatrixGPU,
+static void lyra2_absorbInput(__global ulong * memMatrixGPU,
     __global ulong * stateThreadGPU_, __global ulong * stateIdxGPU,
     __global const uint * index, __global struct lyra2_salt *salt)
 {
@@ -163,7 +163,7 @@ __kernel void lyra2_bootStrapAndAbsorb(__global ulong * memMatrixGPU,
     __global const uint * index, __global struct lyra2_salt *salt,
     __global ulong * state, __global ulong * stateIdxGPU)
 {
-	int i, mi;
+	uint i, mi;
 
 	ulong threadNumber;
 	uint base, inlen, saltlen;
@@ -291,7 +291,7 @@ __kernel void lyra2_reducedSqueezeRow0(__global ulong * rowOut,
 	state_ += threadNumber * STATESIZE_INT64;
 
 	__global ulong *ptrWord = &rowOut[sliceStart + (N_COLS - 1) * BLOCK_LEN_INT64];	//In Lyra2: pointer to M[0][C-1]
-	int i, j;
+	uint i, j;
 
 	for (j = 0; j < STATESIZE_INT64; j++) {
 		state[j] = state_[j];
@@ -318,7 +318,7 @@ __kernel void lyra2_reducedSqueezeRow0(__global ulong * rowOut,
 __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
     __global ulong * state_, __global struct lyra2_salt *salt)
 {
-	int i, j;
+	uint i, j;
 
 	int threadNumber;
 	ulong sliceStart;
@@ -421,11 +421,11 @@ __kernel void lyra2_reducedDuplexRow(__global ulong * rowIn,
 	}
 }
 
-void reducedDuplexRowFilling(ulong * state,
+static void reducedDuplexRowFilling(ulong * state,
     __global ulong * memMatrixGPU, ulong prev0, ulong prevP, ulong row0,
     ulong rowP, ulong jP, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
-	int i, j;
+	uint i, j;
 	int threadNumber;
 
 	ulong sliceStart;
@@ -515,7 +515,7 @@ void reducedDuplexRowFilling(ulong * state,
 	}
 }
 
-void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
+static void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
     ulong * state, ulong prev0, ulong row0, ulong rowP, ulong window,
     ulong jP, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -543,7 +543,7 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	//Another row used only as input
 	__global ulong *ptrWordIn0;	//In Lyra2: pointer to prev0
 
-	int i, j;
+	uint i, j;
 
 	ulong ptrWordInOut0_copy[BLOCK_LEN_INT64];
 	ulong ptrWordIn0_copy[BLOCK_LEN_INT64];
@@ -598,7 +598,7 @@ void reducedDuplexRowWanderingParallel(__global ulong * memMatrixGPU,
 	}
 }
 
-void absorbRandomColumn(__global ulong * in, ulong * state,
+static void absorbRandomColumn(__global ulong * in, ulong * state,
     ulong row0, ulong randomColumn0, uint nPARALLEL, uint N_COLS,
     ulong sizeSlicedRows)
 {
@@ -630,7 +630,7 @@ void absorbRandomColumn(__global ulong * in, ulong * state,
 	spongeLyra(state);
 }
 
-void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
+static void wanderingPhaseGPU2(__global ulong * memMatrixGPU,
     ulong * stateThreadGPU, uint timeCost, ulong sizeSlice,
     ulong sqrt, ulong prev0, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -698,7 +698,7 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
     __global ulong * stateThreadGPU_, __global byte * out,
     __global struct lyra2_salt *salt)
 {
-	unsigned int i, mi;
+	uint i, mi;
 	ulong step = 1;		//Visitation step (used during Setup and Wandering phases)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
@@ -717,7 +717,7 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	int threadNumber = get_global_id(0);
 
 	uint len = salt->hash_size;
-	int fullBlocks = len / BLOCK_LEN_BYTES;
+	uint fullBlocks = len / BLOCK_LEN_BYTES;
 
 	uint nPARALLEL = salt->nParallel;
 	uint N_COLS = salt->nCols;
@@ -785,11 +785,11 @@ __kernel void lyra2_setupPhaseWanderingGPU(__global ulong * memMatrixGPU,
 	glmemcpy(ptr, stateThreadGPU, len % BLOCK_LEN_BYTES);
 }
 
-void reducedDuplexRowFilling_P1(ulong * state,
+static void reducedDuplexRowFilling_P1(ulong * state,
     __global ulong * memMatrixGPU, ulong prev0, ulong prev1, ulong row0,
     ulong row1, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
-	int i, j;
+	uint i, j;
 	int threadNumber;
 
 	ulong sliceStart;
@@ -872,7 +872,7 @@ void reducedDuplexRowFilling_P1(ulong * state,
 	}
 }
 
-void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
+static void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
     ulong * state, ulong prev0, ulong row0, ulong row1, ulong prev1,
     uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -892,7 +892,7 @@ void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
 	__global ulong *ptrWordIn0;	//In Lyra2: pointer to prev0
 	__global ulong *ptrWordIn1;	//In Lyra2: pointer to prev1
 
-	int i, j;
+	uint i, j;
 
 	for (i = 0; i < N_COLS; i++) {
 		//col0 = lsw(rot^2(rand)) mod N_COLS
@@ -938,7 +938,7 @@ void reducedDuplexRowWandering_P1(__global ulong * memMatrixGPU,
 	}
 }
 
-void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
+static void wanderingPhaseGPU2_P1(__global ulong * memMatrixGPU,
     ulong * stateThreadGPU, uint timeCost, ulong nRows, ulong prev0,
     ulong prev1, uint nPARALLEL, uint N_COLS, ulong sizeSlicedRows)
 {
@@ -981,7 +981,7 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
     __global ulong * stateThreadGPU_, __global byte * out,
     __global struct lyra2_salt *salt)
 {
-	unsigned int i, mi;
+	uint i, mi;
 	long gap = 1;		//Modifier to the step, assuming the values 1 or -1
 	ulong step = 1;		//Visitation step (used during Setup to dictate the sequence in which rows are read)
 	ulong window = 2;	//Visitation window (used to define which rows can be revisited during Setup)
@@ -993,7 +993,7 @@ __kernel void lyra2_setupPhaseWanderingGPU_P1(__global ulong * memMatrixGPU,
 	ulong row1 = 1;		//row1: revisited during Setup, and then read [and written]; randomly picked during Wandering
 	ulong prev1 = 0;	//prev1: stores the previous value of row1
 	uint len = salt->hash_size;
-	int fullBlocks = len / BLOCK_LEN_BYTES;
+	uint fullBlocks = len / BLOCK_LEN_BYTES;
 
 	ulong stateThreadGPU[STATESIZE_INT64];
 

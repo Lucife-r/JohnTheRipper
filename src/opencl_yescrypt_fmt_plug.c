@@ -730,7 +730,6 @@ static int salt_hash(void *_salt)
 	return hash;
 }
 
-#if FMT_MAIN_VERSION > 11
 
 static unsigned int tunable_cost_N(void *_salt)
 {
@@ -762,7 +761,6 @@ static unsigned int tunable_cost_g(void *_salt)
 	return salt->g;
 }
 
-#endif
 
 struct fmt_main fmt_opencl_yescrypt = {
 	{
