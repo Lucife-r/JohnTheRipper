@@ -29,7 +29,6 @@ yescrypt_init_shared(yescrypt_shared_t * shared,
 {
 	yescrypt_shared_t half1, half2;
 	uint8_t salt[32];
-
 	if (flags & YESCRYPT_SHARED_PREALLOCATED) {
 		if (!shared->aligned || !shared->aligned_size)
 			return -1;

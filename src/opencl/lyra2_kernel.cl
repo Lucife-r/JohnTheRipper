@@ -24,7 +24,7 @@
 #include "opencl_lyra2.h"
 #include "opencl_Sponge_Lyra2.h"
 
-static struct lyra2_salt {
+struct lyra2_salt {
 	unsigned int t_cost, m_cost;
 	unsigned int nCols, nParallel;
 	unsigned int hash_size;

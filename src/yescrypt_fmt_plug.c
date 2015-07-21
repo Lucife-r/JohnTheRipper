@@ -49,8 +49,9 @@ john_register_one(&fmt_yescrypt);
 
 #define BINARY_ALIGN			1
 #define SALT_SIZE			64
-
 #define SALT_ALIGN			1
+
+#define KEY_SIZE			PLAINTEXT_LENGTH
 
 #define MIN_KEYS_PER_CRYPT		1
 #define MAX_KEYS_PER_CRYPT		1
@@ -73,6 +74,11 @@ struct yescrypt_salt {
 	uint64_t N;
 	uint32_t r, p, t, g;
 	yescrypt_flags_t flags;
+	//ROM
+	char ROM;
+	char key[KEY_SIZE+1];
+	uint64_t rom_N;
+	uint32_t rom_r, rom_p;
 };
 
 static struct fmt_tests tests[] = {
@@ -81,8 +87,9 @@ static struct fmt_tests tests[] = {
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$gZ.es2fD1WJAqx5ioo6ZqERrWYzP8iH0uOsUCUJ9lVA","NSA"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$XqyoZHZjZ3KCuNUW4NP/WgG/aAv7jhvp19cSWYJPa86","keyboard"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$etMpFbzahhNbJ0UPlAESnepEdKjs5VqpbpMEZyl.7H/","spiderman"},
-	{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
-	{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs*/
+	{"#local param#262144#8#8$0$0$7X$96....9....WZaPV7LSUEKMo34.$UcNa7Ee718f3x5cu4sdUK.VTVisbzjb/NPtUGJJlZb5","shared"},//rom
+	//{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
+	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs*/
 	{NULL}
 };
 
@@ -93,9 +100,14 @@ static void *get_salt(char *ciphertext);
 
 static struct yescrypt_salt saved_salt;
 static char *saved_key;
+static char prev_key[KEY_SIZE+1];
 static int threads;
 static unsigned char *crypted;
 static yescrypt_local_t * memory_local;
+static yescrypt_shared_t shared;
+
+static uint64_t prev_saved_rom_N;
+static uint32_t prev_saved_rom_r, prev_saved_rom_p;
 
 static void init(struct fmt_main *self)
 {
@@ -119,6 +131,11 @@ static void init(struct fmt_main *self)
 	memory_local=malloc(threads*sizeof(yescrypt_local_t));
 	for(i=0;i<threads;i++)
 		yescrypt_init_local(&memory_local[i]);
+
+	memset(&saved_salt,0,sizeof(saved_salt));
+
+	saved_salt.rom_N=saved_salt.rom_r=saved_salt.rom_p=0;
+	memset(prev_key,0,KEY_SIZE+1);
 }
 
 static void done(void)
@@ -129,6 +146,10 @@ static void done(void)
 	for(i=0;i<threads;i++)
 		yescrypt_free_local(&memory_local[i]);
 	free(memory_local);
+	if(prev_saved_rom_N || prev_saved_rom_r || prev_saved_rom_p)
+	{
+		yescrypt_free_shared(&shared);
+	}
 }
 
 static int valid(char *ciphertext, struct fmt_main *self)
@@ -140,7 +161,9 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	const char *src, *salt;
 	struct yescrypt_salt * tmp_salt;
 	yescrypt_flags_t flags;
-	char *dollar=ciphertext;
+	char *dollar=strchr(ciphertext,'$');
+	if(dollar==NULL)
+		return 0;
 	for(i=0;i<2;i++){
 		dollar=strchr(dollar,'$');
 		if(dollar==NULL)
@@ -268,7 +291,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	}
 
 #endif
-
+	
 	return 1;
 }
 
@@ -311,7 +334,7 @@ static void *get_salt(char *ciphertext)
 	
 	memset(&salt,0,sizeof(struct yescrypt_salt));
 
-	src=ciphertext+1;
+	src=strchr(ciphertext,'$')+1;
 	salt.t=atoi(src);
 	src=strchr(src,'$')+1;
 	salt.g=atoi(src);
@@ -359,6 +382,21 @@ static void *get_salt(char *ciphertext)
 	salt.r=r;
 	salt.p=p;
 	salt.flags=flags;
+	salt.ROM=0;
+	
+	//ROM
+	if(ciphertext[0]=='#')
+	{
+		char *sharp=strchr(ciphertext+1,'#');
+		memset(&salt.key,0,KEY_SIZE+1);
+		memcpy(&salt.key,ciphertext+1,sharp-ciphertext-1);
+		salt.ROM=1;
+		salt.rom_N=atoi(sharp+1);
+		sharp=strchr(sharp+1,'#');
+		salt.rom_r=atoi(sharp+1);
+		sharp=strchr(sharp+1,'#');
+		salt.rom_p=atoi(sharp+1);
+	}
 	
 	return (void *)&salt;
 }
@@ -366,6 +404,32 @@ static void *get_salt(char *ciphertext)
 static void set_salt(void *salt)
 {
 	memcpy(&saved_salt,salt,sizeof(struct yescrypt_salt));
+	if(saved_salt.ROM && 
+	prev_saved_rom_N==saved_salt.rom_N &&
+	prev_saved_rom_r==saved_salt.rom_r &&
+	prev_saved_rom_p==saved_salt.rom_p &&
+	!strcmp(prev_key,saved_salt.key)
+	)
+		return;
+	else if(saved_salt.ROM)
+	{
+		if(prev_saved_rom_N || prev_saved_rom_r || prev_saved_rom_p)
+		{
+			yescrypt_free_shared(&shared);
+		}
+		if (yescrypt_init_shared(&shared,
+		    (uint8_t *)(&saved_salt.key), strlen(saved_salt.key),
+		    saved_salt.rom_N, saved_salt.rom_r,
+		    saved_salt.rom_p, YESCRYPT_SHARED_DEFAULTS,
+		    NULL, 0)) {
+			puts(" FAILED");
+			exit(1);
+		}
+		prev_saved_rom_N=saved_salt.rom_N;
+		prev_saved_rom_r=saved_salt.rom_r;
+		prev_saved_rom_p=saved_salt.rom_p;
+		strcpy(prev_key,saved_salt.key);
+	}
 }
 
 static int cmp_all(void *binary, int count)
@@ -394,18 +458,22 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 {
 	int i;
 	const int count = *pcount;
+	yescrypt_shared_t *sh=NULL;
+	if(saved_salt.ROM)
+	{	
+		sh=&shared;
+	}
 
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
 	for (i = 0; i < count; i++) {
 		uint8_t hash[BINARY_SIZE];
-		yescrypt_kdf(NULL, &memory_local[i], (uint8_t*)(saved_key + i * (PLAINTEXT_LENGTH + 1)),
+		yescrypt_kdf(sh, &memory_local[i], (uint8_t*)(saved_key + i * (PLAINTEXT_LENGTH + 1)),
 		    	strlen(saved_key + i * (PLAINTEXT_LENGTH + 1)), (uint8_t*)saved_salt.salt, saved_salt.salt_length,
 	    		saved_salt.N, saved_salt.r, saved_salt.p, saved_salt.g, saved_salt.t, saved_salt.flags, hash, sizeof(hash));
 		encode64(crypted+i*HASH_SIZE, HASH_SIZE, hash, sizeof(hash));
 	}
-
 	return count;
 }
 

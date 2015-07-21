@@ -35,7 +35,7 @@
 #include "opencl_yescrypt.h"
 #include "opencl_hmac_sha256.h"
 
-// BINARY_SIZE, SALT_SIZE, HASH_SIZE, PLAINTEXT_LENGTH is passed with -D during build
+// BINARY_SIZE, SALT_SIZE, HASH_SIZE, PLAINTEXT_LENGTH, KEY_SIZE is passed with -D during build
 
 #define NULL 0
 
@@ -56,6 +56,12 @@ struct yescrypt_salt {
 	ulong N;
 	uint r, p, t, g;
 	uint flags;
+	//ROM
+	char ROM;
+	char key[KEY_SIZE];
+	ulong rom_size;
+	ulong rom_N;
+	uint rom_r, rom_p;
 };
 
 
@@ -554,7 +560,7 @@ void pwxform_gp(__global ulong * B, ulong * S)
 
 			ulong p0_copy[PWXsimple];
 			ulong p1_copy[PWXsimple];
-//pomidor
+
 			for(k=0;k<PWXsimple;k++)
 				p0_copy[k]=p0[k];
 
@@ -1603,32 +1609,27 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 
 
 static int
-yescrypt_kdf_body(uchar * passwd, uint passwdlen,
+yescrypt_kdf_body(
+    __global ulong * VROM, ulong NROM,
+    uchar * passwd, uint passwdlen,
     uchar * salt, uint saltlen,
     ulong N, uint r, uint p, uint t, uint flags,
-    uchar * buf, uint buflen, __global ulong *V, __global ulong *B, __global ulong *XY, __global ulong* S)
+    uchar * buf, uint buflen, __global ulong *V,
+    __global ulong *B, __global ulong *XY, __global ulong* S)
 {
-	//region_t tmp;
-	ulong NROM;
-	__global ulong * VROM;
 	uint B_size;
 	ulong sha256[4];
 	uchar dk[sizeof(sha256)], * dkp = buf;
 
 	uchar init_buf[]="yescrypt-prehash";
 
-
-	NROM = 0;
-	VROM = NULL;
-	/*if (shared) {
-		NROM = shared->aligned_size / ((size_t)128 * r);
+	if (VROM) {
+		NROM = NROM / (128 * r);
 		if (((NROM & (NROM - 1)) != 0) || (NROM <= 1) ||
 		    !(flags & YESCRYPT_RW)) {
-			errno = EINVAL;
 			return -1;
 		}
-		VROM = shared->aligned;
-	}*/
+	}
 
 	B_size = (size_t)128 * r * p;
 
@@ -1745,10 +1746,17 @@ void encode64(__global uchar * dst, uint dstlen,uchar * src, uint srclen)
 
 }
 
-__kernel void yescrypt_crypt_kernel(__global const uchar * in,
+__kernel void yescrypt_crypt_kernel(
+    __global const uchar * in,
     __global const uint * index,
     __global uchar *out,
-    __global struct yescrypt_salt *salt, __global unsigned long *V, __global unsigned long *B, __global unsigned long *XY,  __global unsigned long *S)
+    __global struct yescrypt_salt *salt, 
+    __global unsigned long *V,
+    __global unsigned long *B,
+    __global unsigned long *XY,
+    __global unsigned long *S,
+    __global unsigned long *ROM
+)
 {
 	int i;
 
@@ -1766,6 +1774,7 @@ __kernel void yescrypt_crypt_kernel(__global const uchar * in,
 	uint gid=get_global_id(0);
 	uint base=index[gid];
 	uint passwdlen=index[gid+1]-base;
+	ulong rom_size=salt->rom_size;
 
 	out+=gid*HASH_SIZE;
 	in+=base;
@@ -1784,6 +1793,9 @@ __kernel void yescrypt_crypt_kernel(__global const uchar * in,
 	for(i=0;i<HASH_SIZE;i++)
 		out[i]=0;
 
+	if(salt->ROM==0)
+		ROM=NULL;
+
 	B=(__global ulong *)(((__global char*)B)+gid*B_size);
 	V = (__global ulong *)(((__global char*)V) + gid*V_size);
 	XY = (__global ulong *)(((__global char*)XY) + gid*XY_size);
@@ -1793,7 +1805,7 @@ __kernel void yescrypt_crypt_kernel(__global const uchar * in,
 	if ((flags & (YESCRYPT_RW | __YESCRYPT_INIT_SHARED)) == YESCRYPT_RW &&
 	    p >= 1 && N / p >= 0x100 && N / p * r >= 0x20000) {
 		int retval = yescrypt_kdf_body(
-			passwd, passwdlen, real_salt, saltlen,
+			ROM, rom_size, passwd, passwdlen, real_salt, saltlen,
 		    N >> 6, r, p, 0, flags | __YESCRYPT_PREHASH,
 		    buf, BINARY_SIZE, V, B, XY, S);
 		if (retval)
@@ -1810,7 +1822,7 @@ __kernel void yescrypt_crypt_kernel(__global const uchar * in,
 
 	do {
 		int retval = yescrypt_kdf_body(
-		    passwd, passwdlen, real_salt, saltlen,
+		    ROM, rom_size, passwd, passwdlen, real_salt, saltlen,
 		    N, r, p, t, flags, buf, BINARY_SIZE, V, B, XY, S);
 		if (retval)
 		{

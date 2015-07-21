@@ -39,6 +39,7 @@ john_register_one(&fmt_opencl_yescrypt);
 #define BINARY_ALIGN            1
 #define SALT_SIZE		64
 #define SALT_ALIGN              1
+#define KEY_SIZE		PLAINTEXT_LENGTH
 
 #define MIN_KEYS_PER_CRYPT      1
 #define MAX_KEYS_PER_CRYPT      1
@@ -70,8 +71,15 @@ struct yescrypt_salt {
 	uint32_t salt_length;
 	uint64_t N;
 	uint32_t r, p, t, g;
-	uint32_t flags;
+	yescrypt_flags_t flags;
+	//ROM
+	char ROM;
+	char key[KEY_SIZE+1];
+	uint64_t rom_size;
+	uint64_t rom_N;
+	uint32_t rom_r, rom_p;
 };
+
 
 static struct fmt_tests tests[] = {
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$ZoMvPuaKOKqV3K2xNz3pPp.cWOIYJICPLdp6EFsv5Z0","pleaseletmein"},
@@ -79,23 +87,29 @@ static struct fmt_tests tests[] = {
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$gZ.es2fD1WJAqx5ioo6ZqERrWYzP8iH0uOsUCUJ9lVA","NSA"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$XqyoZHZjZ3KCuNUW4NP/WgG/aAv7jhvp19cSWYJPa86","keyboard"},
 	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$etMpFbzahhNbJ0UPlAESnepEdKjs5VqpbpMEZyl.7H/","spiderman"},
+	{"#local param#262144#8#8$0$0$7X$96....9....WZaPV7LSUEKMo34.$UcNa7Ee718f3x5cu4sdUK.VTVisbzjb/NPtUGJJlZb5","shared"},//rom
 	//{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
-	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs
+	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs*/
 	{NULL}
 };
 
 
 static char *saved_key;
 static unsigned int *saved_idx, key_idx;
-static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_V, cl_B, cl_XY, cl_S;
+static cl_mem cl_saved_key, cl_saved_idx, cl_result, cl_saved_salt, cl_V, cl_B, cl_XY, cl_S, cl_shared;
 static cl_mem pinned_key, pinned_idx, pinned_result,
-     pinned_salt;
+     pinned_salt, pinned_shared;
 static char *output;
 static struct yescrypt_salt *saved_salt;
 static char *saved_key;
 static uint64_t N,r,p,g;
 static yescrypt_flags_t flags;
 static yescrypt_flags_t saved_flags;
+static yescrypt_shared_t shared;
+static char prev_key[KEY_SIZE+1]; 
+
+uint64_t prev_saved_rom_N;
+uint32_t prev_saved_rom_r, prev_saved_rom_p;
 
 static struct fmt_main *self;
 
@@ -169,6 +183,19 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		     gws * S_size, NULL, &ret_code);
 		     HANDLE_CLERROR(ret_code, "Error creating device buffer");
 	saved_flags=flags;
+
+	if(shared.aligned_size)
+	{
+		pinned_shared =
+		    clCreateBuffer(context[gpu_id],
+		    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+		    shared.aligned_size , NULL, &ret_code);
+		HANDLE_CLERROR(ret_code, "Error creating page-locked buffer");
+		cl_shared =
+		    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
+		    shared.aligned_size , NULL, &ret_code);
+		HANDLE_CLERROR(ret_code, "Error creating device buffer");
+	}
 
 	pinned_key =
 	    clCreateBuffer(context[gpu_id],
@@ -251,6 +278,8 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 		(void *)&cl_XY), "Error setting argument 6");
 	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 7, sizeof(cl_mem),
 		(void *)&cl_S), "Error setting argument 7");
+	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 8, sizeof(cl_mem),
+		(void *)&cl_shared), "Error setting argument 8");
 }
 
 static void release_clobj(void)
@@ -275,13 +304,19 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clReleaseMemObject(pinned_idx),
 	    "Release pinned index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(pinned_salt),
-	    "Release pinned index buffer");
+	    "Release pinned salt buffer");
+	if(shared.aligned_size)
+		HANDLE_CLERROR(clReleaseMemObject(pinned_shared),
+		    "Release pinned shared buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_result), "Release result buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_key), "Release key buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_idx),
 	    "Release index buffer");
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_salt),
 	    "Release salt");
+
+	if(shared.aligned_size)
+		HANDLE_CLERROR(clReleaseMemObject(cl_shared), "Release key buffer");
 
 	HANDLE_CLERROR(clReleaseMemObject(cl_V), "Release memory");
 	HANDLE_CLERROR(clReleaseMemObject(cl_B), "Release memory");
@@ -300,8 +335,39 @@ static void done(void)
 		HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
 		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 	}
+	if(prev_saved_rom_N || prev_saved_rom_r || prev_saved_rom_p)
+	{
+		yescrypt_free_shared(&shared);
+	}
 }
 
+void init_rom(char *key, uint64_t N, uint32_t r, uint32_t p)
+{
+	if(
+	prev_saved_rom_N==N &&
+	prev_saved_rom_r==r &&
+	prev_saved_rom_p==p &&
+	!strcmp(prev_key,key)
+	)
+		return;
+	else
+	{
+		if(prev_saved_rom_N || prev_saved_rom_r || prev_saved_rom_p)
+		{
+			yescrypt_free_shared(&shared);
+		}
+		if (yescrypt_init_shared(&shared,(uint8_t*)key, strlen(key),
+		    N, r, p, YESCRYPT_SHARED_DEFAULTS,
+		    NULL, 0)) {
+			puts(" FAILED");
+			exit(1);
+		}
+		prev_saved_rom_N=N;
+		prev_saved_rom_r=r;
+		prev_saved_rom_p=p;
+		strcpy(prev_key,key);
+	}
+}
 
 static void reset_()
 {
@@ -314,7 +380,7 @@ static void reset_()
 	char build_opts[128];
 
 	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d -DHASH_SIZE=%d", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH, HASH_SIZE);
+	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d -DHASH_SIZE=%d -DKEY_SIZE=%d", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH, HASH_SIZE, KEY_SIZE);
 
 
 	opencl_init("$JOHN/kernels/yescrypt_kernel.cl", gpu_id, build_opts);
@@ -347,18 +413,33 @@ static void reset(struct db_main *db)
 	if(!autotuned)
 	{
 		int i;
+		char ROM=0;
+		char *tmp_key=NULL;
+		uint64_t rom_N;
+		uint32_t rom_p, rom_r;
 		N=p=r=g=flags=0;
+		rom_N=rom_p=rom_r=0;
 		if (!db) {
 			for (i = 0; tests[i].ciphertext; i++)
 			{
 				struct yescrypt_salt *salt;
-				N = MAX(N, tunable_cost_N(get_salt(tests[i].ciphertext)));
-				p = MAX(p, tunable_cost_p(get_salt(tests[i].ciphertext)));
-				r = MAX(r, tunable_cost_r(get_salt(tests[i].ciphertext)));
-				g = MAX(g, tunable_cost_g(get_salt(tests[i].ciphertext)));
 				salt=get_salt(tests[i].ciphertext);
-				flags = salt->flags;
+				N = MAX(N, salt->N);
+				r = MAX(r, salt->r);
+				g = MAX(g, salt->g);
+				p = MAX(p, salt->p);
+				ROM = MAX(ROM, salt->ROM);
+				rom_N = MAX(rom_N, salt->rom_N);
+				rom_r = MAX(rom_r, salt->rom_r);
+				rom_p = MAX(rom_p, salt->rom_p);
+				if(salt->ROM)
+				{
+					tmp_key=salt->key;
+				}
+				flags |= salt->flags;
 			}
+			if(ROM)
+				init_rom(tmp_key,rom_N,rom_r,rom_p);
 			reset_();
 		} else {
 			struct db_salt *salts = db->salts;
@@ -368,10 +449,20 @@ static void reset(struct db_main *db)
 				r = MAX(r, salt->r);
 				g = MAX(g, salt->g);
 				p = MAX(p, salt->p);
-				flags=salt->flags;
+				ROM = MAX(ROM, salt->ROM);
+				rom_N = MAX(rom_N, salt->rom_N);
+				rom_r = MAX(rom_r, salt->rom_r);
+				rom_p = MAX(rom_p, salt->rom_p);
+				flags |= salt->flags;
+				if(salt->ROM)
+				{
+					tmp_key=salt->key;
+				}
 
 				salts = salts->next;
 			}
+			if(ROM)
+				init_rom(tmp_key,rom_N,rom_r,rom_p);
 			reset_();
 		}
 	}
@@ -380,6 +471,8 @@ static void reset(struct db_main *db)
 static void init(struct fmt_main *_self)
 {
 	self = _self;
+	prev_saved_rom_N=prev_saved_rom_r=prev_saved_rom_p=0;
+	memset(prev_key,0,KEY_SIZE+1);
 }
 
 static int valid(char *ciphertext, struct fmt_main *self)
@@ -550,7 +643,7 @@ static void *get_salt(char *ciphertext)
 	
 	memset(&salt,0,sizeof(struct yescrypt_salt));
 
-	src=ciphertext+1;
+	src=strchr(ciphertext,'$')+1;
 	salt.t=atoi(src);
 	src=strchr(src,'$')+1;
 	salt.g=atoi(src);
@@ -597,7 +690,25 @@ static void *get_salt(char *ciphertext)
 	salt.N=N;
 	salt.r=r;
 	salt.p=p;
-	salt.flags=(uint32_t)flags;
+	salt.flags=flags;
+	
+	//ROM
+	if(ciphertext[0]=='#')
+	{
+		char *sharp=strchr(ciphertext+1,'#');
+		memset(&salt.key,0,KEY_SIZE+1);
+		memcpy(&salt.key,ciphertext+1,sharp-ciphertext-1);
+		salt.ROM=1;
+		salt.rom_N=atoi(sharp+1);
+		sharp=strchr(sharp+1,'#');
+		salt.rom_r=atoi(sharp+1);
+		sharp=strchr(sharp+1,'#');
+		salt.rom_p=atoi(sharp+1);
+	}
+	else
+	{
+		salt.ROM=salt.rom_N=salt.rom_r=salt.rom_p=0;
+	}
 	
 	return (void *)&salt;
 }
@@ -606,6 +717,8 @@ static void *get_salt(char *ciphertext)
 static void set_salt(void *salt)
 {
 	memcpy(saved_salt,salt,sizeof(struct yescrypt_salt));
+	if(saved_salt->ROM)
+		init_rom(saved_salt->key,saved_salt->rom_N, saved_salt->rom_r, saved_salt->rom_p);
 }
 
 static int cmp_all(void *binary, int count)
@@ -638,6 +751,15 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 	global_work_size =
 	    local_work_size ? (count + local_work_size -
 	    1) / local_work_size * local_work_size : count;
+
+	//ROM
+	if(saved_salt->ROM)
+	{
+		saved_salt->rom_size=shared.aligned_size;
+		HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_shared,
+			CL_FALSE, 0, shared.aligned_size, shared.aligned, 0, NULL,
+			multi_profilingEvent[0]), "Failed transferring ROM");
+	}
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
 		CL_FALSE, 0, sizeof(struct yescrypt_salt), saved_salt, 0, NULL,
@@ -730,6 +852,7 @@ static int salt_hash(void *_salt)
 	return hash;
 }
 
+#if FMT_MAIN_VERSION > 11
 
 static unsigned int tunable_cost_N(void *_salt)
 {
@@ -761,6 +884,7 @@ static unsigned int tunable_cost_g(void *_salt)
 	return salt->g;
 }
 
+#endif
 
 struct fmt_main fmt_opencl_yescrypt = {
 	{

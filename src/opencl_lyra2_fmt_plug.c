@@ -31,7 +31,7 @@ john_register_one(&fmt_opencl_lyra2);
 #define BENCHMARK_LENGTH	-1
 
 #define PLAINTEXT_LENGTH		125
-#define BINARY_SIZE			256	//BIARY_SIZE in Lyra2 is unlimited
+#define BINARY_SIZE			256	//BINARY_SIZE in Lyra2 is unlimited
 
 #define CIPHERTEXT_LENGTH	(2*BINARY_SIZE)
 
