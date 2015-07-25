@@ -164,6 +164,7 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	uint64_t B_size=128*r*p;
 	uint64_t XY_size=256*r+64;
 	uint64_t S_size=Sbytes * p;
+	//printf("V_SIZE=%lu B_=%lu XY=%lu S=%lu\n",V_size,B_size,XY_size,S_size);
 
 
 	cl_V = cl_B = cl_XY = cl_S = NULL;

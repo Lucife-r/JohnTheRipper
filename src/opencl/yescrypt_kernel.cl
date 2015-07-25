@@ -435,29 +435,107 @@ void blockmix_salsa8_ggp(__global ulong * Bin, __global ulong * Bout, ulong * X,
  * pwxform(B):
  * Transform the provided block using the provided S-boxes.
  */
+
+#if PWXsimple==2
+
 void pwxform(__global ulong * B, __global ulong * S)
 {
+	__global ulong (*X)[PWXsimple] = (__global ulong (*)[PWXsimple])B;
 	__global uchar *S0 = (__global uchar *)S;
 	__global uchar *S1 = (__global uchar *)S + Sbytes / 2;
 	uint i, j;
-	uint k;
+	ulong2 pp0,pp1;
 
-	ulong XX[PWXsimple*PWXgather];
+	/* 2: for j = 0 to PWXgather do */
+	for (j = 0; j < PWXgather; j++) {
+		__global ulong *Xj = X[j];
+		ulong2 xx= ((__global ulong2 *)Xj)[0];
 
-#if (PWXsimple*PWXgather)%8==0
-	ulong8 *XX8=(ulong8 *)XX;
-	XX8[0]=((__global ulong8 *)B)[0];
+		/* 1: for i = 0 to PWXrounds do */
+		for (i = 0; i < PWXrounds; i++) {
+			ulong x = xx.x & Smask2;
+			__global ulong2 *p0, *p1;
+
+			/* 3: p0 <-- (lo(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p0 = (__global ulong2 *)(S0 + (uint)x);
+			/* 4: p1 <-- (hi(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p1 = (__global ulong2 *)(S1 + (x >> 32));
+			pp0=p0[0];
+			pp1=p1[0];
+
+			/* 5: for k = 0 to PWXsimple do */
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+			xx.x = (ulong)(xx.x >> 32) * (uint)xx.x;
+
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+			xx.y = (ulong)(xx.y >> 32) * (uint)xx.y;
+			xx += pp0;
+			xx ^= pp1;
+		}
+
+		((__global ulong2 *)Xj)[0]=xx;
+	}
+}
+
+
+
+void pwxform_gp(__global ulong * B, ulong * S)
+{
+	__global ulong (*X)[PWXsimple] = (__global ulong (*)[PWXsimple])B;
+	uchar *S0 = (uchar *)S;
+	uchar *S1 = (uchar *)S + Sbytes / 2;
+	uint i, j;
+	ulong2 pp0,pp1;
+
+	/* 2: for j = 0 to PWXgather do */
+	for (j = 0; j < PWXgather; j++) {
+		__global ulong *Xj = X[j];
+		ulong2 xx= ((__global ulong2 *)Xj)[0];
+
+		/* 1: for i = 0 to PWXrounds do */
+		for (i = 0; i < PWXrounds; i++) {
+			ulong x = xx.x & Smask2;
+			ulong2 *p0, *p1;
+
+			/* 3: p0 <-- (lo(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p0 = (ulong2 *)(S0 + (uint)x);
+			/* 4: p1 <-- (hi(B_{j,0}) & Smask) / (PWXsimple * 8) */
+			p1 = (ulong2 *)(S1 + (x >> 32));
+			pp0=p0[0];
+			pp1=p1[0];
+
+			/* 5: for k = 0 to PWXsimple do */
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+			xx.x = (ulong)(xx.x >> 32) * (uint)xx.x;
+
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
+			xx.y = (ulong)(xx.y >> 32) * (uint)xx.y;
+			xx += pp0;
+			xx ^= pp1;
+		}
+
+		((__global ulong2 *)Xj)[0]=xx;
+	}
+}
+
 #else
-	for(i=0;i<PWXsimple*PWXgather;i++)
-		XX[i]=B[i];
+
+void pwxform(__global ulong * B, __global ulong * S)
+{
+	__global ulong (*X)[PWXsimple] = (__global ulong (*)[PWXsimple])B;
+	__global uchar *S0 = (__global uchar *)S;
+	__global uchar *S1 = (__global uchar *)S + Sbytes / 2;
+	uint i, j;
+#if PWXsimple > 2
+	uint k;
 #endif
 
 	/* 2: for j = 0 to PWXgather do */
 	for (j = 0; j < PWXgather; j++) {
-		
-		ulong x0 = XX[PWXsimple*j];
+		__global ulong *Xj = X[j];
+		ulong x0 = Xj[0];
 #if PWXsimple > 1
-		ulong x1 = XX[PWXsimple*j+1];
+		ulong x1 = Xj[1];
 #endif
 
 		/* 1: for i = 0 to PWXrounds do */
@@ -470,82 +548,57 @@ void pwxform(__global ulong * B, __global ulong * S)
 			/* 4: p1 <-- (hi(B_{j,0}) & Smask) / (PWXsimple * 8) */
 			p1 = (__global ulong *)(S1 + (x >> 32));
 
-			ulong p0_copy[PWXsimple];
-			ulong p1_copy[PWXsimple];
-
-			for(k=0;k<PWXsimple;k++)
-				p0_copy[k]=p0[k];
-
-			for(k=0;k<PWXsimple;k++)
-				p1_copy[k]=p1[k];
-
 			/* 5: for k = 0 to PWXsimple do */
-			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S 0_{p0,k}) \xor S1_{p1,k} */
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
 			x0 = (ulong)(x0 >> 32) * (uint)x0;
-			x0 += p0_copy[0];
-			x0 ^= p1_copy[0];
+			x0 += p0[0];
+			x0 ^= p1[0];
 
 #if PWXsimple > 1
 			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
 			x1 = (ulong)(x1 >> 32) * (uint)x1;
-			x1 += p0_copy[1];
-			x1 ^= p1_copy[1];
+			x1 += p0[1];
+			x1 ^= p1[1];
 #endif
 
 #if PWXsimple > 2
 			/* 5: for k = 0 to PWXsimple do */
 			for (k = 2; k < PWXsimple; k++) {
 				/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
-				x = 1;
+				x = Xj[k];
 
 				x = (ulong)(x >> 32) * (uint)x;
-				x += p0_copy[k];
-				x ^= p1_copy[k];
+				x += p0[k];
+				x ^= p1[k];
 
-				XX[PWXsimple*j+k] = x;
+				Xj[k] = x;
 			}
 #endif
 		}
 
-		XX[PWXsimple*j] = x0;
+		Xj[0] = x0;
 #if PWXsimple > 1
-		XX[PWXsimple*j+1] = x1;
+		Xj[1] = x1;
 #endif
 	}
-
-
-#if (PWXsimple*PWXgather)%8==0
-	((__global ulong8 *)B)[0]=XX8[0];
-#else
-	for(i=0;i<PWXsimple*PWXgather;i++)
-		B[i]=XX[i];
-#endif
-	
 }
 
 void pwxform_gp(__global ulong * B, ulong * S)
 {
+	__global ulong (*X)[PWXsimple] = (__global ulong (*)[PWXsimple])B;
 	uchar *S0 = (uchar *)S;
 	uchar *S1 = (uchar *)S + Sbytes / 2;
 	uint i, j;
+#if PWXsimple > 2
 	uint k;
-
-	ulong XX[PWXsimple*PWXgather];
-
-#if (PWXsimple*PWXgather)%8==0
-	ulong8 *XX8=(ulong8 *)XX;
-	XX8[0]=((__global ulong8 *)B)[0];
-#else
-	for(i=0;i<PWXsimple*PWXgather;i++)
-		XX[i]=B[i];
 #endif
 
 	/* 2: for j = 0 to PWXgather do */
 	for (j = 0; j < PWXgather; j++) {
-		
-		ulong x0 = XX[PWXsimple*j];
+		__global ulong *Xj = X[j];
+		ulong x0 = Xj[0];
 #if PWXsimple > 1
-		ulong x1 = XX[PWXsimple*j+1];
+		ulong x1 = Xj[1];
 #endif
 
 		/* 1: for i = 0 to PWXrounds do */
@@ -558,58 +611,42 @@ void pwxform_gp(__global ulong * B, ulong * S)
 			/* 4: p1 <-- (hi(B_{j,0}) & Smask) / (PWXsimple * 8) */
 			p1 = (ulong *)(S1 + (x >> 32));
 
-			ulong p0_copy[PWXsimple];
-			ulong p1_copy[PWXsimple];
-
-			for(k=0;k<PWXsimple;k++)
-				p0_copy[k]=p0[k];
-
-			for(k=0;k<PWXsimple;k++)
-				p1_copy[k]=p1[k];
-
 			/* 5: for k = 0 to PWXsimple do */
-			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S 0_{p0,k}) \xor S1_{p1,k} */
+			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
 			x0 = (ulong)(x0 >> 32) * (uint)x0;
-			x0 += p0_copy[0];
-			x0 ^= p1_copy[0];
+			x0 += p0[0];
+			x0 ^= p1[0];
 
 #if PWXsimple > 1
 			/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
 			x1 = (ulong)(x1 >> 32) * (uint)x1;
-			x1 += p0_copy[1];
-			x1 ^= p1_copy[1];
+			x1 += p0[1];
+			x1 ^= p1[1];
 #endif
 
 #if PWXsimple > 2
 			/* 5: for k = 0 to PWXsimple do */
 			for (k = 2; k < PWXsimple; k++) {
 				/* 6: B_{j,k} <-- (hi(B_{j,k}) * lo(B_{j,k}) + S0_{p0,k}) \xor S1_{p1,k} */
-				x = 1;
+				x = Xj[k];
 
 				x = (ulong)(x >> 32) * (uint)x;
-				x += p0_copy[k];
-				x ^= p1_copy[k];
+				x += p0[k];
+				x ^= p1[k];
 
-				XX[PWXsimple*j+k] = x;
+				Xj[k] = x;
 			}
 #endif
 		}
 
-		XX[PWXsimple*j] = x0;
+		Xj[0] = x0;
 #if PWXsimple > 1
-		XX[PWXsimple*j+1] = x1;
+		Xj[1] = x1;
 #endif
 	}
-
-
-#if (PWXsimple*PWXgather)%8==0
-	((__global ulong8 *)B)[0]=XX8[0];
-#else
-	for(i=0;i<PWXsimple*PWXgather;i++)
-		B[i]=XX[i];
-#endif
-	
 }
+
+#endif
 
 /**
  * blockmix_pwxform(Bin, Bout, S, r):
@@ -1430,7 +1467,7 @@ ulong p2floor(ulong x)
  * greater than 1.
  */
 
-#define SP_COPY 1
+//#define SP_COPY
 
 #ifdef SP_COPY
 #define SMIX1 smix1_2
