@@ -174,6 +174,7 @@
 #define FLG_PRINCE_MMAP			0x0100000000000000ULL
 #define FLG_RULES_ALLOW			0x0200000000000000ULL
 #define FLG_RULES_SET			(FLG_RULES | FLG_RULES_ALLOW)
+#define FLG_BENCH			0x0400000000000000ULL
 
 /*
  * Structure with option flags and all the parameters.

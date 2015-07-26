@@ -112,11 +112,17 @@ static void bench_install_handler(void)
 #endif
 }
 
-static void bench_set_keys(struct fmt_main *format,
+static void bench_set_keys_orig(struct fmt_main *format,
 	struct fmt_tests *current, int cond)
 {
 	char *plaintext;
 	int index, length;
+	static int modified_benchmark_printed=0;
+	if(!modified_benchmark_printed)
+	{
+		printf("\nwaning: using not modified bench.c\n");
+		modified_benchmark_printed=1;
+	}
 
 	format->methods.clear_keys();
 
@@ -140,6 +146,62 @@ static void bench_set_keys(struct fmt_main *format,
 		format->methods.set_key(plaintext, index);
 	}
 }
+
+static void bench_set_keys_modified(struct fmt_main *format,
+	struct fmt_tests *current, int cond)
+{
+	char *plaintext;
+	int index, length;
+	char new_pass[30];
+	int i,len;
+	static int modified_benchmark_printed=0;
+	if(!modified_benchmark_printed)
+	{
+		printf("\nusing modified bench.c\n");
+		modified_benchmark_printed=1;
+	}
+
+	srand(time(NULL));
+	format->methods.clear_keys();
+
+	length = format->params.benchmark_length;
+	for (index = 0; index < format->params.max_keys_per_crypt; index++) {
+		do {
+			if (!current->ciphertext)
+				current = format->params.tests;
+			plaintext = current->plaintext;
+			current++;
+
+			if (cond > 0) {
+				if ((int)strlen(plaintext) > length) break;
+			} else
+			if (cond < 0) {
+				if ((int)strlen(plaintext) <= length) break;
+			} else
+				break;
+		} while (1);
+		
+		len=rand()%30;
+		memset(new_pass,0,len);
+		for(i=0;i<len;i++)
+		{
+			new_pass[i]=(char)(rand()%24+97);
+		}
+		new_pass[len]=0;
+
+		format->methods.set_key(new_pass, index);
+	}
+}
+
+static void bench_set_keys(struct fmt_main *format,
+	struct fmt_tests *current, int cond)
+{
+	if (options.flags & FLG_BENCH)
+		bench_set_keys_orig(format,current,cond);
+	else
+		bench_set_keys_modified(format,current,cond);
+}
+
 #ifndef BENCH_BUILD
 #if FMT_MAIN_VERSION > 11
 static unsigned int get_cost(struct fmt_main *format, int index, int cost_idx)

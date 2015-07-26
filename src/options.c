@@ -246,6 +246,7 @@ static struct opt_entry opt_list[] = {
 	{"stress-test", FLG_LOOPTEST | FLG_TEST_SET, FLG_TEST_CHK,
 		0, ~FLG_TEST_SET & ~FLG_FORMAT & ~FLG_SAVEMEM & ~FLG_DYNFMT &
 		~OPT_REQ_PARAM & ~FLG_NOLOG, "%u", &benchmark_time},
+	{"bench", FLG_BENCH, FLG_BENCH},
 	{NULL}
 };
 
