@@ -22,16 +22,14 @@
 #ifndef LYRA2_H_
 #define LYRA2_H_
 
-#if defined(__AVX2__)
-#define LYRA2_SIMD			" AVX2"
-#elif defined(__SSE4__)
-#define	LYRA2_SIMD			" SSE4"
-#elif defined(__SSSE3__) && !defined(__XOP__)
-#define LYRA2_SIMD			" SSSE3"
+#if defined(__XOP__)
+#define LYRA2_SIMD			" XOP"
 #elif defined(__AVX__)
 #define LYRA2_SIMD			" AVX"
+#elif defined(__SSE3__)
+#define	LYRA2_SIMD			" SSE3"
 #elif defined(__SSE2__)
-#define	LYRA2_SIMD			" SSE"
+#define	LYRA2_SIMD			" SSE2"
 #else
 #define LYRA2_SIMD			""
 #endif
