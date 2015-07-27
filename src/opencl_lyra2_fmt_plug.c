@@ -89,9 +89,6 @@ cl_kernel bootStrapAndAbsorb_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow
 static struct fmt_main *self;
 
 static void *get_salt(char *ciphertext);
-static unsigned int tunable_cost_m(void *_salt);
-static unsigned int tunable_cost_c(void *_salt);
-static unsigned int tunable_cost_p(void *_salt);
 
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
@@ -374,8 +371,6 @@ static void reset_()
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel setupPhaseWanderingGPU. Double-check kernel name?");
 
-	print_memory(M_COST * ROW_LEN_BYTES);
-
 	release_clobj();
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
@@ -389,27 +384,42 @@ static void reset(struct db_main *db)
 {
 	if(!autotuned)
 	{
-		int i;
+		unsigned int i, prev_M_COST=0;
 		M_COST=0;
 		nPARALLEL=0;
 		N_COLS=0;
 		if (!db) {
 			for (i = 0; tests[i].ciphertext; i++)
 			{ 
-				M_COST = MAX(M_COST, tunable_cost_m(get_salt(tests[i].ciphertext)));
-				N_COLS = MAX(N_COLS, tunable_cost_c(get_salt(tests[i].ciphertext)));
-				nPARALLEL = MAX(nPARALLEL, tunable_cost_p(get_salt(tests[i].ciphertext)));
+				struct lyra2_salt *salt=get_salt(tests[i].ciphertext); 
+				M_COST = MAX(M_COST, salt->m_cost);
+				N_COLS = MAX(N_COLS, salt->nCols);
+				nPARALLEL = MAX(nPARALLEL, salt->nParallel);
+				if(i==0)
+				{
+					printf("\n");
+					print_memory(M_COST * ROW_LEN_BYTES);
+					prev_M_COST=M_COST;
+				}
+			}
+			if(prev_M_COST!=M_COST)
+			{
+				printf("max ");
+				print_memory(M_COST * ROW_LEN_BYTES);
 			}
 			reset_();
 		} else {
-			struct db_salt *salt = db->salts;
+			struct db_salt *salts = db->salts;
 			M_COST = 0;
-			while (salt != NULL) {
-				M_COST = MAX(M_COST, salt->cost[1]);
-				N_COLS = MAX(N_COLS, salt->cost[2]);
-				nPARALLEL = MAX(nPARALLEL, salt->cost[3]);
-				salt = salt->next;
+			while (salts != NULL) {
+				struct lyra2_salt *salt=salts->salt;
+				M_COST = MAX(M_COST, salt->m_cost);
+				N_COLS = MAX(N_COLS, salt->nCols);
+				nPARALLEL = MAX(nPARALLEL, salt->nParallel);
+				salts = salts->next;
 			}
+			printf("\n");
+			print_memory(M_COST * ROW_LEN_BYTES);
 			reset_();
 		}
 	}
@@ -739,6 +749,8 @@ static int salt_hash(void *_salt)
 	return hash;
 }
 
+#if FMT_MAIN_VERSION > 11
+
 static unsigned int tunable_cost_t(void *_salt)
 {
 	struct lyra2_salt *salt=(struct lyra2_salt *)_salt;
@@ -763,6 +775,7 @@ static unsigned int tunable_cost_p(void *_salt)
 	return salt->nParallel;
 }
 
+#endif
 
 struct fmt_main fmt_opencl_lyra2 = {
 	{

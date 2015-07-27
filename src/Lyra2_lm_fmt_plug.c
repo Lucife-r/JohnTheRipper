@@ -19,6 +19,7 @@ john_register_one(&fmt_lyra2_lm);
 #include "arch.h"
 #include "params.h"
 #include "common.h"
+#include "options.h"
 #include "formats.h"
 #include "memdbg.h"
 #include "Lyra2.h"
@@ -106,6 +107,63 @@ static void done(void)
 	free_allocated();
 	free(saved_key);
 	free(crypted);
+}
+
+static void print_memory(double memory)
+{
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+} 
+
+static void reset(struct db_main *db)
+{
+	static int printed=0;
+	if(!printed)
+	{
+		unsigned int i;
+		uint32_t M_COST=0;
+		uint64_t N_COLS=0;
+		uint64_t prev_need=0, need=0;
+		if (!db) {
+			for (i = 0; tests[i].ciphertext; i++)
+			{
+				struct lyra2_salt *salt=get_salt(tests[i].ciphertext); 
+				M_COST = MAX(M_COST, salt->m_cost);
+				N_COLS = MAX(N_COLS, salt->nCols);
+				if(i==0)
+				{
+					printf("\n");
+					prev_need=(uint64_t) M_COST * (uint64_t) (BLOCK_LEN_INT64 * N_COLS * 8);
+					print_memory(prev_need);
+				}
+			}
+			need=(uint64_t) M_COST * (uint64_t) (BLOCK_LEN_INT64 * N_COLS * 8);
+			if(prev_need!=need)
+			{
+				printf("max ");
+				print_memory(need);
+			}
+		} else {
+			struct db_salt *salts = db->salts;
+			M_COST = 0;
+			while (salts != NULL) {
+				struct lyra2_salt *salt=salts->salt;
+				M_COST = MAX(M_COST, salt->m_cost);
+				N_COLS = MAX(N_COLS, salt->nCols);
+				salts = salts->next;
+			}
+			printf("\n");
+			need=(uint64_t) M_COST * (uint64_t) (BLOCK_LEN_INT64 * N_COLS * 8);
+			print_memory(need);
+		}
+		printed=1;
+	}
 }
 
 static int valid(char *ciphertext, struct fmt_main *self)
@@ -501,7 +559,7 @@ struct fmt_main fmt_lyra2_lm = {
 	}, {
 		init,
 		done,
-		fmt_default_reset,
+		reset,
 		fmt_default_prepare,
 		valid,
 		fmt_default_split,

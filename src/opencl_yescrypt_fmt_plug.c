@@ -370,12 +370,23 @@ void init_rom(char *key, uint64_t N, uint32_t r, uint32_t p)
 	}
 }
 
-static void reset_()
+static uint64_t yescrypt_memory(uint64_t N, uint32_t r, uint32_t p, uint32_t g, yescrypt_flags_t flags)
 {
 	uint64_t V_size=128*r*(N<<(g*2));
 	uint64_t B_size=128*r*p;
 	uint64_t XY_size=256*r+64;
 	uint64_t S_size=Sbytes * p;
+	uint64_t need;
+
+	need=V_size+B_size+XY_size;
+	if (flags & YESCRYPT_RW)
+		need+=S_size;
+
+	return need;
+}
+
+static void reset_()
+{
 	uint64_t need;
 
 	char build_opts[128];
@@ -394,11 +405,7 @@ static void reset_()
 	    "Error creating kernel. Double-check kernel name?");
 
 
-	need=V_size+B_size+XY_size;
-	if (flags & YESCRYPT_RW)
-		need+=S_size;
-
-	print_memory(need);
+	need=yescrypt_memory(N, r, p, g, flags);
 
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
@@ -418,8 +425,10 @@ static void reset(struct db_main *db)
 		char *tmp_key=NULL;
 		uint64_t rom_N;
 		uint32_t rom_p, rom_r;
+		uint64_t need, prev_need;
 		N=p=r=g=flags=0;
 		rom_N=rom_p=rom_r=0;
+		need=prev_need=0;
 		if (!db) {
 			for (i = 0; tests[i].ciphertext; i++)
 			{
@@ -438,9 +447,22 @@ static void reset(struct db_main *db)
 					tmp_key=salt->key;
 				}
 				flags |= salt->flags;
+				if(i==0)
+				{
+					printf("\n");
+					prev_need=yescrypt_memory(N, r, p, g, flags);
+					print_memory(prev_need);
+				}
 			}
 			if(ROM)
 				init_rom(tmp_key,rom_N,rom_r,rom_p);
+
+			need=yescrypt_memory(N, r, p, g, flags);
+			if(need!=prev_need)
+			{
+				printf("max ");
+				print_memory(yescrypt_memory(N, r, p, g, flags));
+			}
 			reset_();
 		} else {
 			struct db_salt *salts = db->salts;
@@ -464,6 +486,9 @@ static void reset(struct db_main *db)
 			}
 			if(ROM)
 				init_rom(tmp_key,rom_N,rom_r,rom_p);
+
+			printf("\n");
+			print_memory(yescrypt_memory(N, r, p, g, flags));
 			reset_();
 		}
 	}

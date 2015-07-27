@@ -16,6 +16,7 @@ john_register_one(&fmt_yescrypt);
 #include "arch.h"
 #include "params.h"
 #include "common.h"
+#include "options.h"
 #include "formats.h"
 #include "memdbg.h"
 #include "yescrypt.h"
@@ -149,6 +150,88 @@ static void done(void)
 	if(prev_saved_rom_N || prev_saved_rom_r || prev_saved_rom_p)
 	{
 		yescrypt_free_shared(&shared);
+	}
+}
+
+static uint64_t yescrypt_memory(uint64_t N, uint32_t r, uint32_t p, uint32_t g, yescrypt_flags_t flags)
+{
+	uint64_t V_size=128*r*(N<<(g*2));
+	uint64_t B_size=128*r*p;
+	uint64_t XY_size=256*r+64;
+	uint64_t S_size=Sbytes * p;
+	uint64_t need;
+
+	need=V_size+B_size+XY_size;
+	if (flags & YESCRYPT_RW)
+		need+=S_size;
+
+	return need;
+}
+
+static void print_memory(double memory)
+{
+	char s[]="\0kMGT";
+	int i=0;
+	while(memory>=1024)
+	{
+		memory/=1024;
+		i++;
+	}
+	printf("memory per hash : %.2lf %cB\n",memory,s[i]);
+}
+
+static void reset(struct db_main *db)
+{
+	static int printed=0;
+	if(!printed)
+	{
+		int i;
+		uint64_t N;
+		uint32_t p,r,g;
+		yescrypt_flags_t flags;
+		uint64_t need, prev_need;
+		N=p=r=g=flags=0;
+		need=prev_need=0;
+		if (!db) {
+			for (i = 0; tests[i].ciphertext; i++)
+			{
+				struct yescrypt_salt *salt;
+				salt=get_salt(tests[i].ciphertext);
+				N = MAX(N, salt->N);
+				r = MAX(r, salt->r);
+				g = MAX(g, salt->g);
+				p = MAX(p, salt->p);
+				flags |= salt->flags;
+				if(i==0)
+				{
+					printf("\n");
+					prev_need=yescrypt_memory(N, r, p, g, flags);
+					print_memory(prev_need);
+				}
+			}
+
+			need=yescrypt_memory(N, r, p, g, flags);
+			if(need!=prev_need)
+			{
+				printf("max ");
+				print_memory(yescrypt_memory(N, r, p, g, flags));
+			}
+		} else {
+			struct db_salt *salts = db->salts;
+			while (salts != NULL) {
+				struct yescrypt_salt * salt=salts->salt;
+				N = MAX(N, salt->N);
+				r = MAX(r, salt->r);
+				g = MAX(g, salt->g);
+				p = MAX(p, salt->p);
+				flags |= salt->flags;
+
+				salts = salts->next;
+			}
+
+			printf("\n");
+			print_memory(yescrypt_memory(N, r, p, g, flags));
+		}
 	}
 }
 
@@ -608,7 +691,7 @@ struct fmt_main fmt_yescrypt = {
 	}, {
 		init,
 		done,
-		fmt_default_reset,
+		reset,
 		fmt_default_prepare,
 		valid,
 		fmt_default_split,
