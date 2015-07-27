@@ -1488,7 +1488,10 @@ void smix(__global ulong * B, uint r, ulong N, uint p, uint t,
 {
 	uint s = 16 * r;
 	ulong Nchunk, Nloop_all, Nloop_rw;
-	uint i,j;
+	uint i;
+#ifdef SP_COPY
+	uint j;
+#endif
 
 	/* 1: n <-- N / p */
 	Nchunk = N / p;

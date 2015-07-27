@@ -120,7 +120,7 @@ static void bench_set_keys_orig(struct fmt_main *format,
 	static int modified_benchmark_printed=0;
 	if(!modified_benchmark_printed)
 	{
-		printf("\nwarning: using the same password for benchmarking\n");
+		printf("warning: using the same password for benchmarking\n");
 		modified_benchmark_printed=1;
 	}
 
@@ -157,7 +157,7 @@ static void bench_set_keys_modified(struct fmt_main *format,
 	static int modified_benchmark_printed=0;
 	if(!modified_benchmark_printed)
 	{
-		printf("\nusing different password for benchmarking\n");
+		printf("using different password for benchmarking\n");
 		modified_benchmark_printed=1;
 	}
 

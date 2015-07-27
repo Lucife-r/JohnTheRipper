@@ -113,7 +113,7 @@ static size_t get_default_workgroup()
 		return get_platform_vendor_id(platform_id) == DEV_INTEL ?
 		    8 : 1;
 	else
-		return 0;
+		return 64;
 }
 
 static void print_memory(double memory)
