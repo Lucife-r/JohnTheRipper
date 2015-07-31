@@ -19,11 +19,7 @@ john_register_one(&fmt_argon2i);
 #include "formats.h"
 #include "options.h"
 
-#ifdef __SSE2__
 #include "argon2i.h"
-#else
-#include "argon2i-ref.h"
-#endif
 
 #include "memdbg.h"
 #ifdef _OPENMP
@@ -370,9 +366,9 @@ static void argon2i(void *out, size_t outlen, const void *in, size_t inlen,
     unsigned int m_cost, uint8_t lanes, region_t *memory)
 {
 #ifdef __SSE2__
-	ARGON2i_OPT
+	ARGON2i_SSE
 #else
-	ARGON2i_REF
+	ARGON2i
 #endif
 		(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, lanes, memory->aligned);
 }
@@ -475,6 +471,12 @@ static unsigned int tunable_cost_m(void *_salt)
 	return salt->m_cost;
 }
 
+static unsigned int tunable_cost_l(void *_salt)
+{
+	struct argon2i_salt *salt=(struct argon2i_salt *)_salt;
+	return salt->lanes;
+}
+
 #endif
 
 struct fmt_main fmt_argon2i = {
@@ -499,7 +501,8 @@ struct fmt_main fmt_argon2i = {
 #if FMT_MAIN_VERSION > 11
 		{
 			"t",
-			"m"
+			"m",
+			"l"
 		},
 #endif
 		tests
@@ -515,7 +518,8 @@ struct fmt_main fmt_argon2i = {
 #if FMT_MAIN_VERSION > 11
 		{
 			tunable_cost_t,
-			tunable_cost_m
+			tunable_cost_m,
+			tunable_cost_l
 		},
 #endif
 		fmt_default_source,

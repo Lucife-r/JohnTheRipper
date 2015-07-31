@@ -1,34 +1,19 @@
-/*****Argon2i optimized implementation (SSE3)*
-*  Code written by Daniel Dinu and Dmitry Khovratovich
-* khovratovich@gmail.com
-* modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
-**/
+/*Argon2i Reference Implementation
+  Code written by Dmitry Khovratovich in 2015.
+  khovratovich@gmail.com
+  modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>*/
 
-#ifdef __SSE2__
 
 #include <stdio.h>
-#include <stdint.h>
-#include <inttypes.h>
-#if defined(_MSC_VER) // ADDED
-#else
-#include <unistd.h>
-#endif
+#include <stdlib.h>
 
-// Intrinsics
-#if defined(_MSC_VER) // ADDED
-#else
-#include <x86intrin.h>
-
+#include <stdint.h> 
 #include <string.h>
 
-#endif
-// BLAKE2 round
-#include "blake2b-round.h"
 #include "blake2-round-no-msg.h"
+#include "blake2-impl.h"
 #include "blake2.h"
-
-// Constants
-# include "argon2i.h"
+#include "argon2i.h"
 
 static void scheme_info_t_init(scheme_info_t *scheme, uint8_t* s, uint32_t m, uint32_t p, uint8_t l)
 { 
@@ -84,89 +69,44 @@ static int blake2b_long(uint8_t *out, const void *in, const uint32_t outlen, con
 	return 0;
 }
 
-
-static void ComputeBlock(__m128i *state, uint8_t* ref_block_ptr, uint8_t* next_block_ptr)
+static void ComputeBlock(uint64_t *v, uint8_t* ref_block_ptr, uint8_t* next_block_ptr)
 {
-	__m128i ref_block[64];
+	uint64_t ref_block[128];
 	uint8_t i;
 
-	__m128i t0, t1;
-	__m128i r16 = _mm_setr_epi8(2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
-	__m128i r24 = _mm_setr_epi8(3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
-
-	for (i = 0; i < 64; i++)
+	for (i = 0; i < 128; i++)
 	{
-		ref_block[i] = _mm_load_si128((__m128i *) ref_block_ptr);
-		ref_block_ptr += 16;
+		ref_block[i] = ((uint64_t *)ref_block_ptr)[i];
 	}
 
-	for (i = 0; i < 64; i++)
-	{
-		ref_block[i] = state[i] = _mm_xor_si128(state[i], ref_block[i]); //XORing the reference block to the state and storing the copy of the result
-	}
 
+	for (i = 0; i < 128; i++)
+	{
+		ref_block[i] = v[i] = v[i]^ref_block[i]; //XORing the reference block to the state and storing the copy of the result
+	}
 
 	// BLAKE2 - begin
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[0], state[1], state[2], state[3],
-		state[4], state[5], state[6], state[7]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[8], state[9], state[10], state[11],
-		state[12], state[13], state[14], state[15]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[16], state[17], state[18], state[19],
-		state[20], state[21], state[22], state[23]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[24], state[25], state[26], state[27],
-		state[28], state[29], state[30], state[31]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[32], state[33], state[34], state[35],
-		state[36], state[37], state[38], state[39]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[40], state[41], state[42], state[43],
-		state[44], state[45], state[46], state[47]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[48], state[49], state[50], state[51],
-		state[52], state[53], state[54], state[55]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[56], state[57], state[58], state[59],
-		state[60], state[61], state[62], state[63]);
-
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[0], state[8], state[16], state[24],
-		state[32], state[40], state[48], state[56]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[1], state[9], state[17], state[25],
-		state[33], state[41], state[49], state[57]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[2], state[10], state[18], state[26],
-		state[34], state[42], state[50], state[58]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[3], state[11], state[19], state[27],
-		state[35], state[43], state[51], state[59]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[4], state[12], state[20], state[28],
-		state[36], state[44], state[52], state[60]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[5], state[13], state[21], state[29],
-		state[37], state[45], state[53], state[61]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[6], state[14], state[22], state[30],
-		state[38], state[46], state[54], state[62]);
-
-	BLAKE2_ROUND_NO_MSG_SSE(state[7], state[15], state[23], state[31],
-		state[39], state[47], state[55], state[63]);
-
-	// BLAKE2 - end
-
-	for (i = 0; i< 64; i++)
+	for (i = 0; i < 8; ++i)//Applying Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
 	{
-		state[i] = _mm_xor_si128(state[i], ref_block[i]); //Feedback
-		_mm_store_si128((__m128i *) next_block_ptr, state[i]);
-		next_block_ptr += 16;
+
+		BLAKE2_ROUND_NOMSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
+			v[16 * i + 5], v[16 * i + 6], v[16 * i + 7], v[16 * i + 8], v[16 * i + 9], v[16 * i + 10],
+			v[16 * i + 11], v[16 * i + 12], v[16 * i + 13], v[16 * i + 14], v[16 * i + 15]);
+	}
+	for (i = 0; i < 8; i++) //(0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
+	{
+		BLAKE2_ROUND_NOMSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
+			v[2*i + 49], v[2*i + 64], v[2*i + 65], v[2*i + 80], v[2*i + 81], v[2*i + 96], v[2*i + 97],
+			v[2*i + 112], v[2*i + 113]);
+	}// BLAKE2 - end
+
+
+	for (i = 0; i< 128; i++)
+	{
+		v[i] = v[i] ^ ref_block[i]; //Feedback
+		((uint64_t *) next_block_ptr)[i]= v[i];
 	}
 }
-
 
 
 static void Initialize(scheme_info_t* info,uint8_t* input_hash)
@@ -191,17 +131,17 @@ static void Finalize(uint8_t *state, uint8_t* out, uint32_t outlen, uint8_t lane
 {
 	uint8_t l;
 	uint32_t j;
-	__m128i blockhash[BLOCK_SIZE/16];
+	uint64_t blockhash[BLOCK_SIZE/sizeof(uint64_t)];
 	memset(blockhash, 0, BLOCK_SIZE);
 	for (l = 0; l < lanes; ++l)//XORing all last blocks of the lanes
 	{
 		uint32_t segment_length = m_cost / (SYNC_POINTS*lanes);
 		uint8_t* block_ptr = state + (((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE; //points to the last block of the first lane
 
-		for (j = 0; j < BLOCK_SIZE / 16; ++j)
+		for (j = 0; j < BLOCK_SIZE / sizeof(uint64_t); ++j)
 		{
-			blockhash[j] = _mm_xor_si128(blockhash[j], *(__m128i*)block_ptr);
-			block_ptr += 16;
+			blockhash[j] = blockhash[j]^( *(uint64_t*)block_ptr);
+			block_ptr += sizeof(uint64_t);
 		}
 	}
 	blake2b_long(out, blockhash, outlen, BLOCK_SIZE);
@@ -223,8 +163,8 @@ static void GenerateAddresses(const scheme_info_t* info, position_info_t* positi
 	input_block[2] = position->slice;
 	input_block[3] = position->index;
 	input_block[4] = 0xFFFFFFFF;
-	ComputeBlock((__m128i*)input_block, zero_block, (uint8_t*)addresses);
-	ComputeBlock((__m128i*)zero_block, (uint8_t*)addresses, (uint8_t*)addresses);
+	ComputeBlock((uint64_t*)input_block, zero_block, (uint8_t*)addresses);
+	ComputeBlock((uint64_t*)zero_block, (uint8_t*)addresses, (uint8_t*)addresses);
 
 
 	/*Making block offsets*/
@@ -284,7 +224,7 @@ static void GenerateAddresses(const scheme_info_t* info, position_info_t* positi
 static void FillSegment(const scheme_info_t* info, const position_info_t position)
 {
 	uint32_t i;
-	__m128i prev_block[64];
+	uint64_t prev_block[128];
 	uint32_t addresses[ADDRESSES_PER_BLOCK];
 	uint32_t next_block_offset;
 	uint8_t *memory = info->state;
@@ -311,10 +251,10 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 			return;
 
 		bi = prev_block_offset = (lane * segment_length + 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
-		for (i = 0; i < 64; i++)
+		for (i = 0; i < 128; i++)
 		{
-			prev_block[i] = _mm_load_si128((__m128i *) &memory[bi]);
-			bi += 16;
+			prev_block[i] = *(uint64_t *) (&memory[bi]);
+			bi += 8;
 		}
 		
 		next_block_offset = (lane * segment_length + 2) * BLOCK_SIZE;
@@ -330,10 +270,10 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 	{
 		uint32_t prev_slice = (slice>0)?(slice-1):(SYNC_POINTS-1);
 		uint32_t bi = prev_block_offset = ((prev_slice * lanes + lane + 1) * segment_length - 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
-		for (i = 0; i < 64; i++)
+		for (i = 0; i < 128; i++)
 		{
-			prev_block[i] = _mm_load_si128((__m128i *) &memory[bi]);
-			bi += 16;
+			prev_block[i] = *(uint64_t *) (&memory[bi]);
+			bi += 8;
 		}
 	}
 
@@ -374,7 +314,7 @@ static void FillMemory(const scheme_info_t* info)//Main loop: filling memory <t_
 }
 
 
-static int Argon2iSSE(uint8_t *out, uint32_t outlen, const uint8_t *msg, uint32_t msglen, const uint8_t *nonce, uint32_t noncelen, const uint8_t *secret,
+static int Argon2i(uint8_t *out, uint32_t outlen, const uint8_t *msg, uint32_t msglen, const uint8_t *nonce, uint32_t noncelen, const uint8_t *secret,
 	uint8_t secretlen, const uint8_t *ad, uint32_t adlen, uint32_t t_cost, uint32_t m_cost, uint8_t lanes, void *memory_)
 {
 	uint8_t *memory=(uint8_t*) memory_;
@@ -459,10 +399,8 @@ static int Argon2iSSE(uint8_t *out, uint32_t outlen, const uint8_t *msg, uint32_
 	return 0;
 }
 
-int ARGON2i_SSE(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
+int ARGON2i(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
 	 unsigned int t_cost, unsigned int m_cost, uint8_t lanes, void *memory)
  {
-	return Argon2iSSE((uint8_t*)out, (uint32_t)outlen, (const uint8_t*)in, (uint32_t)inlen, (const uint8_t*)salt, (uint32_t)saltlen, NULL, 0, NULL, 0, (uint32_t)t_cost, (uint32_t)m_cost, lanes, memory);
+	return Argon2i((uint8_t*)out, (uint32_t)outlen, (const uint8_t*)in, (uint32_t)inlen, (const uint8_t*)salt, (uint32_t)saltlen, NULL, 0, NULL, 0, (uint32_t)t_cost, (uint32_t)m_cost, lanes, memory);
  }
-
-#endif //#ifdef __SSE2__

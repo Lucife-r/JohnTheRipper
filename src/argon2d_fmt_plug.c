@@ -18,11 +18,7 @@ john_register_one(&fmt_argon2d);
 #include "common.h"
 #include "formats.h"
 #include "options.h"
-#ifdef __SSE2__
 #include "argon2d.h"
-#else
-#include "argon2d-ref.h"
-#endif
 #include "memdbg.h"
 #ifdef _OPENMP
 #include <omp.h>
@@ -367,9 +363,9 @@ static void argon2d(void *out, size_t outlen, const void *in, size_t inlen,
     unsigned int m_cost, uint8_t lanes, region_t *memory)
 {
 #ifdef __SSE2__
-	ARGON2d_OPT
+	ARGON2d_SSE
 #else
-	ARGON2d_REF
+	ARGON2d
 #endif
 		(out, outlen, in, inlen, salt, saltlen, t_cost, m_cost, lanes, memory->aligned);
 }
@@ -472,6 +468,12 @@ static unsigned int tunable_cost_m(void *_salt)
 	return salt->m_cost;
 }
 
+static unsigned int tunable_cost_l(void *_salt)
+{
+	struct argon2d_salt *salt=(struct argon2d_salt *)_salt;
+	return salt->lanes;
+}
+
 #endif
 
 struct fmt_main fmt_argon2d = {
@@ -496,7 +498,8 @@ struct fmt_main fmt_argon2d = {
 #if FMT_MAIN_VERSION > 11
 		{
 			"t",
-			"m"
+			"m",
+			"l",
 		},
 #endif
 		tests
@@ -512,7 +515,8 @@ struct fmt_main fmt_argon2d = {
 #if FMT_MAIN_VERSION > 11
 		{
 			tunable_cost_t,
-			tunable_cost_m
+			tunable_cost_m,
+			tunable_cost_l
 		},
 #endif
 		fmt_default_source,
