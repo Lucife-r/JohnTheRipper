@@ -33,7 +33,9 @@ john_register_one(&fmt_argon2i);
 #define FORMAT_LABEL			"argon2i"
 #define FORMAT_NAME			""
 
-#if defined(__AVX__)
+#if defined(__XOP__)
+#define ALGORITHM_NAME			"XOP"
+#elif defined(__AVX__)
 #define ALGORITHM_NAME			"AVX"
 #elif defined(__SSSE3__)
 #define ALGORITHM_NAME			"SSSE3"

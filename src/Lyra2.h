@@ -26,8 +26,8 @@
 #define LYRA2_SIMD			" XOP"
 #elif defined(__AVX__)
 #define LYRA2_SIMD			" AVX"
-#elif defined(__SSE3__)
-#define	LYRA2_SIMD			" SSE3"
+#elif defined(__SSSE3__)
+#define	LYRA2_SIMD			" SSSE3"
 #elif defined(__SSE2__)
 #define	LYRA2_SIMD			" SSE2"
 #else
