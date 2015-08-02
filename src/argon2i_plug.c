@@ -1,7 +1,8 @@
-/*Argon2i Reference Implementation
-  Code written by Dmitry Khovratovich in 2015.
-  khovratovich@gmail.com
-  modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>*/
+/*****Argon2i optimized implementation*
+*  Code written by Daniel Dinu and Dmitry Khovratovich
+* khovratovich@gmail.com
+* modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
+**/
 
 
 #include <stdio.h>

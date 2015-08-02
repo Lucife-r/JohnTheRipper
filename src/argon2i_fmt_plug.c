@@ -30,41 +30,32 @@ john_register_one(&fmt_argon2i);
 #define FORMAT_NAME			""
 
 #if defined(__XOP__)
-#define ALGORITHM_NAME			"XOP"
+#define ALGORITHM_NAME			"Blake2 XOP"
 #elif defined(__AVX__)
-#define ALGORITHM_NAME			"AVX"
+#define ALGORITHM_NAME			"Blake2 AVX"
+#elif defined(__SSE4_1__)
+#define ALGORITHM_NAME			"Blake2 SSE4_1"
 #elif defined(__SSSE3__)
-#define ALGORITHM_NAME			"SSSE3"
+#define ALGORITHM_NAME			"Blake2 SSSE3"
 #elif defined(__SSE2__)
-#define ALGORITHM_NAME			"SSE2"
+#define ALGORITHM_NAME			"Blake2 SSE2"
 #else
-#define ALGORITHM_NAME			" "
+#define ALGORITHM_NAME			"Blake2"
 #endif
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		-1
-
 #define PLAINTEXT_LENGTH		125
-
-#define CIPHERTEXT_LENGTH		64
-
-#define BINARY_SIZE			32
-
+#define CIPHERTEXT_LENGTH		512
+#define BINARY_SIZE			256
 #define BINARY_ALIGN			1
 #define SALT_SIZE			64
-
 #define SALT_ALIGN			1
 
 #define MIN_KEYS_PER_CRYPT		1
 #define MAX_KEYS_PER_CRYPT		1
 
-#ifdef __AVX2__
-#define OMP_SCALE 16
-#elif  defined(SIMD_COEF_64)
-#define OMP_SCALE 16
-#else
-#define OMP_SCALE 16
-#endif
+#define OMP_SCALE			1
 
 #ifdef _OPENMP
 #define THREAD_NUMBER omp_get_thread_num()

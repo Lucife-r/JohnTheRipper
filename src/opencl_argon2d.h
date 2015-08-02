@@ -1,8 +1,5 @@
-#ifndef _argon2d_
-#define _argon2d_
-
-#include <stdlib.h>
-#include <stdint.h>
+#ifndef _opencl_argon2d_
+#define _opencl_argon2d_
 
 #define MIN_LANES  1
 #define SYNC_POINTS 4
@@ -27,30 +24,24 @@
 #define BLAKE_OUTPUT_HASH_SIZE 64
 #define ADDRESSES_IN_BLOCK (BYTES_IN_BLOCK/4)
 
+#ifndef CPU
+
 typedef struct scheme_info_t_
 {
-	uint8_t *state;
-	uint32_t mem_size;
-	uint32_t passes;
-	uint8_t lanes;
+	__global uchar *state;
+	uint mem_size;
+	uint passes;
+	uint lanes;
 } scheme_info_t;
 
 typedef struct position_info_t_
 {
-	uint32_t pass;
-	uint8_t slice;
-	uint8_t lane;
-	uint32_t index;
+	uint pass;
+	uint slice;
+	uint lane;
+	uint index;
 } position_info_t;
-
-int ARGON2d(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
-	unsigned int t_cost, unsigned int m_cost, uint8_t lanes, void *memory);
-
-#ifdef __SSE2__
-
-int ARGON2d_SSE(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
-	unsigned int t_cost, unsigned int m_cost, uint8_t lanes, void *memory);
 
 #endif
 
-#endif //#ifndef _argon2d_
+#endif //#ifndef _opencl_argon2d_

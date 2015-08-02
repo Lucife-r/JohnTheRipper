@@ -23,15 +23,15 @@
 #define LYRA2_H_
 
 #if defined(__XOP__)
-#define LYRA2_SIMD			" XOP"
+#define LYRA2_SIMD			"Blake2 XOP"
 #elif defined(__AVX__)
-#define LYRA2_SIMD			" AVX"
+#define LYRA2_SIMD			"Blake2 AVX"
 #elif defined(__SSSE3__)
-#define	LYRA2_SIMD			" SSSE3"
+#define	LYRA2_SIMD			"Blake2 SSSE3"
 #elif defined(__SSE2__)
-#define	LYRA2_SIMD			" SSE2"
+#define	LYRA2_SIMD			"Blake2 SSE2"
 #else
-#define LYRA2_SIMD			""
+#define LYRA2_SIMD			"Blake2"
 #endif
 
 #include <pthread.h>

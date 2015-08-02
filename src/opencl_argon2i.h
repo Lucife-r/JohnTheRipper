@@ -1,5 +1,5 @@
-#ifndef _argon2i_
-#define _argon2i_
+#ifndef _opencl_argon2i_
+#define _opencl_argon2i_
 
 #define MIN_LANES  1
 #define SYNC_POINTS 4
@@ -25,31 +25,24 @@
 #define ADDRESSES_PER_BLOCK (BLOCK_SIZE/4)
 #define ADDRESSES_MASK (BLOCK_SIZE/4-1)
 
+#ifndef CPU
+
 typedef struct scheme_info_t_
 {
-	uint8_t *state;
-	uint32_t mem_size;
-	uint32_t passes;
-	uint8_t lanes;
+	__global uchar *state;
+	uint mem_size;
+	uint passes;
+	uint lanes;
 } scheme_info_t;
 
 typedef struct position_info_t_
 {
-	uint32_t pass;
-	uint8_t slice;
-	uint8_t lane;
-	uint32_t index;
+	uint pass;
+	uint slice;
+	uint lane;
+	uint index;
 } position_info_t;
-
-
-int ARGON2i(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
-	unsigned int t_cost, unsigned int m_cost, uint8_t lanes, void *memory);
-
-#ifdef __SSE2__
-
-int ARGON2i_SSE(void *out, size_t outlen, const void *in, size_t inlen, const void *salt, size_t saltlen,
-	unsigned int t_cost, unsigned int m_cost, uint8_t lanes, void *memory);
 
 #endif
 
-#endif //#ifndef _argon2i_
+#endif //#ifndef _opencl_argon2i_
