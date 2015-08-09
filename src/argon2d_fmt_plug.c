@@ -31,8 +31,6 @@ john_register_one(&fmt_argon2d);
 #define ALGORITHM_NAME			"Blake2 XOP"
 #elif defined(__AVX__)
 #define ALGORITHM_NAME			"Blake2 AVX"
-#elif defined(__SSE4_1__)
-#define ALGORITHM_NAME			"Blake2 SSE4_1"
 #elif defined(__SSSE3__)
 #define ALGORITHM_NAME			"Blake2 SSSE3"
 #elif defined(__SSE2__)
@@ -43,8 +41,8 @@ john_register_one(&fmt_argon2d);
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		-1
-#define PLAINTEXT_LENGTH		125
-#define CIPHERTEXT_LENGTH		512
+#define PLAINTEXT_LENGTH		MAX_SECRET
+#define CIPHERTEXT_LENGTH		MAX_SECRET*2
 #define BINARY_SIZE			256
 #define BINARY_ALIGN			1
 #define SALT_SIZE			64

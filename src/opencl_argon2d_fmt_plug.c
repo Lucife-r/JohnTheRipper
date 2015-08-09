@@ -30,8 +30,8 @@ john_register_one(&fmt_opencl_argon2d);
 #define BENCHMARK_COMMENT       ""
 #define BENCHMARK_LENGTH        0
 
-#define PLAINTEXT_LENGTH        125
-#define CIPHERTEXT_LENGTH       512
+#define PLAINTEXT_LENGTH	MAX_SECRET
+#define CIPHERTEXT_LENGTH	MAX_SECRET*2
 
 #define BINARY_SIZE             256
 #define BINARY_ALIGN            1

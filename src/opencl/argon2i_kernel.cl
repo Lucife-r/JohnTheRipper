@@ -11,6 +11,8 @@
 #include "opencl_argon2i.h"
 #include "opencl_blake2-round-no-msg.h"
 
+#define MAP(X) ((X)*get_global_size(0))
+
 // BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is passed with -D during build
 
 struct argon2i_salt {
@@ -133,13 +135,13 @@ static void ComputeBlock(ulong *v, uchar* ref_block_ptr, uchar* next_block_ptr)
 	for (i = 0; i < 8; ++i)//Applying Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
 	{
 
-		BLAKE2_ROUND_NOMSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
+		BLAKE2_ROUND_NO_MSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
 			v[16 * i + 5], v[16 * i + 6], v[16 * i + 7], v[16 * i + 8], v[16 * i + 9], v[16 * i + 10],
 			v[16 * i + 11], v[16 * i + 12], v[16 * i + 13], v[16 * i + 14], v[16 * i + 15]);
 	}
 	for (i = 0; i < 8; i++) //(0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
 	{
-		BLAKE2_ROUND_NOMSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
+		BLAKE2_ROUND_NO_MSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
 			v[2*i + 49], v[2*i + 64], v[2*i + 65], v[2*i + 80], v[2*i + 81], v[2*i + 96], v[2*i + 97],
 			v[2*i + 112], v[2*i + 113]);
 	}// BLAKE2 - end
@@ -152,14 +154,15 @@ static void ComputeBlock(ulong *v, uchar* ref_block_ptr, uchar* next_block_ptr)
 	}
 }
 
-static void ComputeBlock_pgg(ulong *v, __global uchar* ref_block_ptr, __global uchar* next_block_ptr)
+
+static void ComputeBlock_pgg(ulong *v, __global ulong* ref_block_ptr, __global ulong* next_block_ptr)
 {
 	ulong ref_block[128];
 	uchar i;
 
 	for (i = 0; i < 128; i++)
 	{
-		ref_block[i] = ((__global ulong *)ref_block_ptr)[i];
+		ref_block[i] = ref_block_ptr[MAP(i)];
 	}
 
 
@@ -172,13 +175,13 @@ static void ComputeBlock_pgg(ulong *v, __global uchar* ref_block_ptr, __global u
 	for (i = 0; i < 8; ++i)//Applying Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
 	{
 
-		BLAKE2_ROUND_NOMSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
+		BLAKE2_ROUND_NO_MSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
 			v[16 * i + 5], v[16 * i + 6], v[16 * i + 7], v[16 * i + 8], v[16 * i + 9], v[16 * i + 10],
 			v[16 * i + 11], v[16 * i + 12], v[16 * i + 13], v[16 * i + 14], v[16 * i + 15]);
 	}
 	for (i = 0; i < 8; i++) //(0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
 	{
-		BLAKE2_ROUND_NOMSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
+		BLAKE2_ROUND_NO_MSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
 			v[2*i + 49], v[2*i + 64], v[2*i + 65], v[2*i + 80], v[2*i + 81], v[2*i + 96], v[2*i + 97],
 			v[2*i + 112], v[2*i + 113]);
 	}// BLAKE2 - end
@@ -187,14 +190,17 @@ static void ComputeBlock_pgg(ulong *v, __global uchar* ref_block_ptr, __global u
 	for (i = 0; i< 128; i++)
 	{
 		v[i] = v[i] ^ ref_block[i]; //Feedback
-		((__global ulong *) next_block_ptr)[i]= v[i];
+		next_block_ptr[MAP(i)]= v[i];
 	}
 }
 
 static void Initialize(scheme_info_t* info,uchar* input_hash)
 {
 	uchar l;
+	uint i;
+	__global ulong *memory=info->state;
 	uchar block_input[BLAKE_INPUT_HASH_SIZE + 8];
+	ulong out_tmp[BLOCK_SIZE/8];
 	uint segment_length = (info->mem_size / (SYNC_POINTS*(info->lanes)));
 	memcpy(block_input, input_hash, BLAKE_INPUT_HASH_SIZE);
 	memset(block_input + BLAKE_INPUT_HASH_SIZE, 0, 8);
@@ -202,14 +208,18 @@ static void Initialize(scheme_info_t* info,uchar* input_hash)
 	{
 		block_input[BLAKE_INPUT_HASH_SIZE + 4] = l;
 		block_input[BLAKE_INPUT_HASH_SIZE] = 0;
-		blake2b_long_g(info->state + l * segment_length*BLOCK_SIZE, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		for(i=0;i<BLOCK_SIZE/8;i++)
+			memory[MAP(l * segment_length*BLOCK_SIZE/8+i)]=out_tmp[i];
 		block_input[BLAKE_INPUT_HASH_SIZE] = 1;
-		blake2b_long_g(info->state + (l * segment_length + 1)*BLOCK_SIZE, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		for(i=0;i<BLOCK_SIZE/8;i++)
+			memory[MAP((l * segment_length + 1)*BLOCK_SIZE/8+i)]=out_tmp[i];
 	}
 	memset(block_input, 0, BLAKE_INPUT_HASH_SIZE + 8);
 }
 
-static void Finalize(uchar *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
+static void Finalize(ulong *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
 {
 	uchar l;
 	uint j;
@@ -218,18 +228,18 @@ static void Finalize(uchar *state, uchar* out, uint outlen, uchar lanes, uint m_
 	for (l = 0; l < lanes; ++l)//XORing all last blocks of the lanes
 	{
 		uint segment_length = m_cost / (SYNC_POINTS*lanes);
-		uchar* block_ptr = state + (((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE; //points to the last block of the first lane
+		ulong* block_ptr = state + MAP((((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE/8); //points to the last block of the first lane
 
 		for (j = 0; j < BLOCK_SIZE / sizeof(ulong); ++j)
 		{
 			blockhash[j] = blockhash[j]^( *(ulong*)block_ptr);
-			block_ptr += sizeof(ulong);
+			block_ptr += MAP(1);
 		}
 	}
 	blake2b_long(out, blockhash, outlen, BLOCK_SIZE);
 }
 
-static void Finalize_g(__global uchar *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
+static void Finalize_g(__global ulong *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
 {
 	uchar l;
 	uint j;
@@ -238,12 +248,11 @@ static void Finalize_g(__global uchar *state, uchar* out, uint outlen, uchar lan
 	for (l = 0; l < lanes; ++l)//XORing all last blocks of the lanes
 	{
 		uint segment_length = m_cost / (SYNC_POINTS*lanes);
-		__global uchar* block_ptr = state + (((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE; //points to the last block of the first lane
+		__global ulong* block_ptr = state + MAP((((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE/8); //points to the last block of the first lane
 
 		for (j = 0; j < BLOCK_SIZE / sizeof(ulong); ++j)
 		{
-			blockhash[j] = blockhash[j]^( *(__global ulong*)block_ptr);
-			block_ptr += sizeof(ulong);
+			blockhash[j] = blockhash[j]^block_ptr[MAP(j)];
 		}
 	}
 	blake2b_long(out, blockhash, outlen, BLOCK_SIZE);
@@ -329,7 +338,7 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 	ulong prev_block[128];
 	uint addresses[ADDRESSES_PER_BLOCK];
 	uint next_block_offset;
-	__global uchar *memory = info->state;
+	__global ulong *memory = info->state;
 	uint pass = position.pass;
 	uint slice = position.slice;
 	uchar lane = position.lane;
@@ -341,8 +350,6 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 	//uint stop = segment_length;//Number of blocks to produce in the segment, is different for the first slice, first pass
 	uint start=0;
 
-	uint prev_block_offset; //offset of previous block
-
 	if(0 == pass && 0 == slice) // First pass; first slice
 	{
 		uint bi;
@@ -352,11 +359,10 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 		if (segment_length <= 2)
 			return;
 
-		bi = prev_block_offset = (lane * segment_length + 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
+		bi = (lane * segment_length + 1) * BLOCK_SIZE/8;//<bi> -- temporary variable for loading previous block
 		for (i = 0; i < 128; i++)
 		{
-			prev_block[i] = *(__global ulong *) (&memory[bi]);
-			bi += 8;
+			prev_block[i] = memory[MAP(bi+i)];
 		}
 
 		next_block_offset = (lane * segment_length + 2) * BLOCK_SIZE;
@@ -364,22 +370,21 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 		reference_block_offset = (lane * segment_length) * BLOCK_SIZE;
 
 		// compute block
-		ComputeBlock_pgg(prev_block, memory+ reference_block_offset, memory+next_block_offset);//Computing third block in the segment
+		ComputeBlock_pgg(prev_block, memory+ MAP(reference_block_offset/8), memory+MAP(next_block_offset/8));//Computing third block in the segment
 		position_local.index = 0;
 		GenerateAddresses(info, &position_local, addresses);
 	}
 	else
 	{
 		uint prev_slice = (slice>0)?(slice-1):(SYNC_POINTS-1);
-		uint bi = prev_block_offset = ((prev_slice * lanes + lane + 1) * segment_length - 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
+		uint bi = ((prev_slice * lanes + lane + 1) * segment_length - 1) * BLOCK_SIZE/8;//<bi> -- temporary variable for loading previous block
 		for (i = 0; i < 128; i++)
 		{
-			prev_block[i] = *(__global ulong *) (&memory[bi]);
-			bi += 8;
+			prev_block[i] = memory[MAP(bi+i)];
 		}
 	}
 
-	next_block_offset = ((slice*lanes + lane)*segment_length + start)*BLOCK_SIZE;
+	next_block_offset = ((slice*lanes + lane)*segment_length + start)*BLOCK_SIZE/8;
 	for(i = start; i < segment_length; i++)
 	{
 		// compute block
@@ -388,8 +393,8 @@ static void FillSegment(const scheme_info_t* info, const position_info_t positio
 			position_local.index = i / ADDRESSES_PER_BLOCK;
 			GenerateAddresses(info, &position_local, addresses);
 		}
-		ComputeBlock_pgg(prev_block, memory+addresses[i&ADDRESSES_MASK], memory + next_block_offset);
-		next_block_offset += BLOCK_SIZE;
+		ComputeBlock_pgg(prev_block, memory+MAP(addresses[i&ADDRESSES_MASK]/8), memory + MAP(next_block_offset));
+		next_block_offset += BLOCK_SIZE/8;
 	}
 }
 
@@ -507,12 +512,11 @@ __kernel void argon2i_crypt_kernel(__global const uchar * in,
     __global const uint * index,
     __global char *out,
     __global struct argon2i_salt *salt,
-    __global uchar *memory
+    __global ulong *memory
 )
 {
 	uint i;
 	uint gid;
-	uint GID;
 
 	uint m_cost, t_cost;
 	uchar lanes;
@@ -538,7 +542,8 @@ __kernel void argon2i_crypt_kernel(__global const uchar * in,
 	lanes=salt->lanes;
 
 	in += base;
-	memory=(__global uchar*)memory+gid*(((ulong)m_cost)<<10);
+	//memory=(__global uchar*)memory+gid*(((ulong)m_cost)<<10);
+	memory+=gid;
 
 	//copying password
 	for(i=0;i<inlen;i++)

@@ -33,8 +33,6 @@ john_register_one(&fmt_argon2i);
 #define ALGORITHM_NAME			"Blake2 XOP"
 #elif defined(__AVX__)
 #define ALGORITHM_NAME			"Blake2 AVX"
-#elif defined(__SSE4_1__)
-#define ALGORITHM_NAME			"Blake2 SSE4_1"
 #elif defined(__SSSE3__)
 #define ALGORITHM_NAME			"Blake2 SSSE3"
 #elif defined(__SSE2__)
@@ -45,8 +43,8 @@ john_register_one(&fmt_argon2i);
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		-1
-#define PLAINTEXT_LENGTH		125
-#define CIPHERTEXT_LENGTH		512
+#define PLAINTEXT_LENGTH		MAX_SECRET
+#define CIPHERTEXT_LENGTH		MAX_SECRET*2
 #define BINARY_SIZE			256
 #define BINARY_ALIGN			1
 #define SALT_SIZE			64
@@ -64,6 +62,8 @@ john_register_one(&fmt_argon2i);
 #endif
 
 static struct fmt_tests tests[] = {
+	{"$argon2i$3$1000$1$damage_done$9963427982D072D62582EAD5E400B944D105B234ECEA338372F713E933573264","monochromatic_stains"},
+	{"$argon2i$3$1000$1$damage_done$9963427982D072D62582EAD5E400B944D105B234ECEA338372F713E933573264","monochromatic_stains"},
 	{"$argon2i$3$100$1$dark_tranquillity$978CBFF98323A594C16BF9BCBFDE2A51920947D8858538180B34833B09717D7F", "out_of_nothing"},
 	{"$argon2i$3$100$1$dark_tranquillity$978CBFF98323A594C16BF9BCBFDE2A51920947D8858538180B34833B09717D7F", "out_of_nothing"},
 	{"$argon2i$10$10$1$dark_tranquillity$FAD39774076A7A8B8FC8A9B4D98D424074978418EB3AB8413244952C03725D3D", "mind_matters"},

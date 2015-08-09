@@ -30,8 +30,8 @@ john_register_one(&fmt_opencl_argon2i);
 #define BENCHMARK_COMMENT       ""
 #define BENCHMARK_LENGTH        0
 
-#define PLAINTEXT_LENGTH        125
-#define CIPHERTEXT_LENGTH       512
+#define PLAINTEXT_LENGTH	MAX_SECRET
+#define CIPHERTEXT_LENGTH	MAX_SECRET*2
 
 #define BINARY_SIZE             256
 #define BINARY_ALIGN            1
@@ -54,6 +54,8 @@ static const char *warn[] = {
 };
 
 static struct fmt_tests tests[] = {
+	{"$argon2i$3$1000$1$damage_done$9963427982D072D62582EAD5E400B944D105B234ECEA338372F713E933573264","monochromatic_stains"},
+	{"$argon2i$3$1000$1$damage_done$9963427982D072D62582EAD5E400B944D105B234ECEA338372F713E933573264","monochromatic_stains"},
 	{"$argon2i$3$100$1$dark_tranquillity$978CBFF98323A594C16BF9BCBFDE2A51920947D8858538180B34833B09717D7F", "out_of_nothing"},
 	{"$argon2i$3$100$1$dark_tranquillity$978CBFF98323A594C16BF9BCBFDE2A51920947D8858538180B34833B09717D7F", "out_of_nothing"},
 	{"$argon2i$10$10$1$dark_tranquillity$FAD39774076A7A8B8FC8A9B4D98D424074978418EB3AB8413244952C03725D3D", "mind_matters"},
@@ -247,7 +249,7 @@ static void reset_(uint64_t mem_size)
 
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE, 0);
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE/4, 0);
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 0, 1000);
