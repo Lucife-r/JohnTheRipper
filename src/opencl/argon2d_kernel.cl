@@ -11,7 +11,7 @@
 #include "opencl_argon2d.h"
 #include "opencl_blake2-round-no-msg.h"
 
-// BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is passed with -D during build
+// BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is paVd with -D during build
 
 struct argon2d_salt {
 	unsigned int t_cost, m_cost;
@@ -75,126 +75,177 @@ static int blake2b_long(uchar *out, const void *in, const uint outlen, const ulo
 	return 0;
 }
 
-static int blake2b_long_g(__global uchar *out, const void *in, const uint outlen, const ulong inlen)
-{
-	uint toproduce;
-	blake2b_state blake_state;
-	if (outlen <= BLAKE2B_OUTBYTES)
-	{
-		blake2b_init(&blake_state, outlen);
-		blake2b_update(&blake_state, (const uchar*)&outlen, sizeof(uint));
-		blake2b_update(&blake_state, (const uchar *)in, inlen);
-		blake2b_final_g(&blake_state, out, outlen);
-	}
-	else
-	{
-		uchar out_buffer[BLAKE2B_OUTBYTES];
-		uchar in_buffer[BLAKE2B_OUTBYTES];
-		blake2b_init(&blake_state, BLAKE2B_OUTBYTES);
-		blake2b_update(&blake_state, (const uchar*)&outlen, sizeof(uint));
-		blake2b_update(&blake_state, (const uchar *)in, inlen);
-		blake2b_final(&blake_state, out_buffer, BLAKE2B_OUTBYTES);
-		memcpy_g(out, out_buffer, BLAKE2B_OUTBYTES / 2);
-		out += BLAKE2B_OUTBYTES / 2;
-		toproduce = outlen - BLAKE2B_OUTBYTES / 2;
-		while (toproduce > BLAKE2B_OUTBYTES)
-		{
-			memcpy(in_buffer, out_buffer, BLAKE2B_OUTBYTES);
-			blake2b(out_buffer, in_buffer, NULL, BLAKE2B_OUTBYTES, BLAKE2B_OUTBYTES, 0);
-			memcpy_g(out, out_buffer, BLAKE2B_OUTBYTES / 2);
-			out += BLAKE2B_OUTBYTES / 2;
-			toproduce -= BLAKE2B_OUTBYTES / 2;
-		}
-		memcpy(in_buffer, out_buffer, BLAKE2B_OUTBYTES);
-		blake2b(out_buffer, in_buffer, NULL, toproduce, BLAKE2B_OUTBYTES, 0);
-		memcpy_g(out, out_buffer, toproduce);
 
-	}
-	return 0;
-}
-
-static void ComputeBlock(ulong *v, uchar* ref_block_ptr, uchar* next_block_ptr)
+static void ComputeBlock(ulong2 *state, ulong2 *ref_block_ptr, ulong2 *next_block_ptr)
 {
-	ulong ref_block[128];
+	ulong2 ref_block[64];
 	uchar i;
 
-	for (i = 0; i < 128; i++)
+	ulong2 t0,t1;
+	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
+	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
+
+	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = ((ulong *)ref_block_ptr)[i];
+		ref_block[i] = ref_block_ptr[i];
 	}
 
-
-	for (i = 0; i < 128; i++)
+	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = v[i] = v[i]^ref_block[i]; //XORing the reference block to the state and storing the copy of the result
+		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
 	}
+
 
 	// BLAKE2 - begin
-	for (i = 0; i < 8; ++i)//Applying Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
-	{
 
-		BLAKE2_ROUND_NOMSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
-			v[16 * i + 5], v[16 * i + 6], v[16 * i + 7], v[16 * i + 8], v[16 * i + 9], v[16 * i + 10],
-			v[16 * i + 11], v[16 * i + 12], v[16 * i + 13], v[16 * i + 14], v[16 * i + 15]);
-	}
-	for (i = 0; i < 8; i++) //(0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
-	{
-		BLAKE2_ROUND_NOMSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
-			v[2*i + 49], v[2*i + 64], v[2*i + 65], v[2*i + 80], v[2*i + 81], v[2*i + 96], v[2*i + 97],
-			v[2*i + 112], v[2*i + 113]);
-	}// BLAKE2 - end
+	BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
+		state[4], state[5], state[6], state[7]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
+		state[12], state[13], state[14], state[15]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
+		state[20], state[21], state[22], state[23]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
+		state[28], state[29], state[30], state[31]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
+		state[36], state[37], state[38], state[39]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
+		state[44], state[45], state[46], state[47]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
+		state[52], state[53], state[54], state[55]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
+		state[60], state[61], state[62], state[63]);
 
 
-	for (i = 0; i< 128; i++)
+	BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
+		state[32], state[40], state[48], state[56]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
+		state[33], state[41], state[49], state[57]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
+		state[34], state[42], state[50], state[58]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
+		state[35], state[43], state[51], state[59]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
+		state[36], state[44], state[52], state[60]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
+		state[37], state[45], state[53], state[61]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
+		state[38], state[46], state[54], state[62]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
+		state[39], state[47], state[55], state[63]);
+
+	// BLAKE2 - end
+
+	for (i = 0; i< 64; i++)
 	{
-		v[i] = v[i] ^ ref_block[i]; //Feedback
-		((ulong *) next_block_ptr)[i]= v[i];
+		next_block_ptr[i] =state[i] = state[i] ^ ref_block[i]; //Feedback
 	}
 }
 
-static void ComputeBlock_pgg(ulong *v, __global uchar* ref_block_ptr, __global uchar* next_block_ptr)
+static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __global ulong2 *next_block_ptr)
 {
-	ulong ref_block[128];
+	ulong2 ref_block[64];
 	uchar i;
 
-	for (i = 0; i < 128; i++)
+	ulong2 t0,t1;
+	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
+	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
+
+	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = ((__global ulong *)ref_block_ptr)[i];
+		ref_block[i] = ref_block_ptr[i];
 	}
 
-
-	for (i = 0; i < 128; i++)
+	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = v[i] = v[i]^ref_block[i]; //XORing the reference block to the state and storing the copy of the result
+		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
 	}
+
 
 	// BLAKE2 - begin
-	for (i = 0; i < 8; ++i)//Applying Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
-	{
 
-		BLAKE2_ROUND_NOMSG(v[16 * i], v[16 * i + 1], v[16 * i + 2], v[16 * i + 3], v[16 * i + 4],
-			v[16 * i + 5], v[16 * i + 6], v[16 * i + 7], v[16 * i + 8], v[16 * i + 9], v[16 * i + 10],
-			v[16 * i + 11], v[16 * i + 12], v[16 * i + 13], v[16 * i + 14], v[16 * i + 15]);
+	BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
+		state[4], state[5], state[6], state[7]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
+		state[12], state[13], state[14], state[15]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
+		state[20], state[21], state[22], state[23]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
+		state[28], state[29], state[30], state[31]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
+		state[36], state[37], state[38], state[39]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
+		state[44], state[45], state[46], state[47]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
+		state[52], state[53], state[54], state[55]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
+		state[60], state[61], state[62], state[63]);
+
+
+	BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
+		state[32], state[40], state[48], state[56]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
+		state[33], state[41], state[49], state[57]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
+		state[34], state[42], state[50], state[58]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
+		state[35], state[43], state[51], state[59]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
+		state[36], state[44], state[52], state[60]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
+		state[37], state[45], state[53], state[61]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
+		state[38], state[46], state[54], state[62]);
+
+	BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
+		state[39], state[47], state[55], state[63]);
+
+	// BLAKE2 - end
+
+	for (i = 0; i< 64; i++)
+	{
+		state[i] = state[i] ^ ref_block[i]; //Feedback
 	}
-	for (i = 0; i < 8; i++) //(0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
-	{
-		BLAKE2_ROUND_NOMSG(v[2*i], v[2*i + 1], v[2*i + 16], v[2*i + 17], v[2*i + 32], v[2*i + 33], v[2*i + 48],
-			v[2*i + 49], v[2*i + 64], v[2*i + 65], v[2*i + 80], v[2*i + 81], v[2*i + 96], v[2*i + 97],
-			v[2*i + 112], v[2*i + 113]);
-	}// BLAKE2 - end
 
-
-	for (i = 0; i< 128; i++)
+	for (i = 0; i< 64; i++)
 	{
-		v[i] = v[i] ^ ref_block[i]; //Feedback
-		((__global ulong *) next_block_ptr)[i]= v[i];
+		next_block_ptr[i]=state[i];
 	}
 }
 
 static void Initialize(scheme_info_t* info,uchar* input_hash)
 {
 	uchar l;
+	uint i;
+	__global ulong *memory=info->state;
 	uchar block_input[BLAKE_INPUT_HASH_SIZE + 8];
+	ulong out_tmp[BLOCK_SIZE/8];
 	uint segment_length = (info->mem_size / (SYNC_POINTS*(info->lanes)));
 	memcpy(block_input, input_hash, BLAKE_INPUT_HASH_SIZE);
 	memset(block_input + BLAKE_INPUT_HASH_SIZE, 0, 8);
@@ -202,48 +253,35 @@ static void Initialize(scheme_info_t* info,uchar* input_hash)
 	{
 		block_input[BLAKE_INPUT_HASH_SIZE + 4] = l;
 		block_input[BLAKE_INPUT_HASH_SIZE] = 0;
-		blake2b_long_g(info->state + l * segment_length*BLOCK_SIZE, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		for(i=0;i<BLOCK_SIZE/8;i++)
+			memory[l * segment_length*BLOCK_SIZE/8+i]=out_tmp[i];
 		block_input[BLAKE_INPUT_HASH_SIZE] = 1;
-		blake2b_long_g(info->state + (l * segment_length + 1)*BLOCK_SIZE, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		for(i=0;i<BLOCK_SIZE/8;i++)
+			memory[(l * segment_length + 1)*BLOCK_SIZE/8+i]=out_tmp[i];
 	}
 	memset(block_input, 0, BLAKE_INPUT_HASH_SIZE + 8);
-}
-
-static void Finalize(uchar *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
-{
-	uchar l;
-	uint j;
-	ulong blockhash[BLOCK_SIZE/sizeof(ulong)];
-	memset(blockhash, 0, BLOCK_SIZE);
-	for (l = 0; l < lanes; ++l)//XORing all last blocks of the lanes
-	{
-		uint segment_length = m_cost / (SYNC_POINTS*lanes);
-		uchar* block_ptr = state + (((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE; //points to the last block of the first lane
-
-		for (j = 0; j < BLOCK_SIZE / sizeof(ulong); ++j)
-		{
-			blockhash[j] = blockhash[j]^( *(ulong*)block_ptr);
-			block_ptr += sizeof(ulong);
-		}
-	}
-	blake2b_long(out, blockhash, outlen, BLOCK_SIZE);
 }
 
 static void Finalize_g(__global uchar *state, uchar* out, uint outlen, uchar lanes, uint m_cost)//XORing the last block of each lane, hashing it, making the tag.
 {
 	uchar l;
 	uint j;
-	ulong blockhash[BLOCK_SIZE/sizeof(ulong)];
-	memset(blockhash, 0, BLOCK_SIZE);
+	ulong2 blockhash[BLOCK_SIZE/sizeof(ulong2)];
+	for(j=0;j<BLOCK_SIZE/sizeof(ulong2);j++)
+	{
+		blockhash[j]=0;
+	}
 	for (l = 0; l < lanes; ++l)//XORing all last blocks of the lanes
 	{
 		uint segment_length = m_cost / (SYNC_POINTS*lanes);
 		__global uchar* block_ptr = state + (((SYNC_POINTS - 1)*lanes+l+1)*segment_length-1)*BLOCK_SIZE; //points to the last block of the first lane
 
-		for (j = 0; j < BLOCK_SIZE / sizeof(ulong); ++j)
+		for (j = 0; j < BLOCK_SIZE / sizeof(ulong2); ++j)
 		{
-			blockhash[j] = blockhash[j]^( *(__global ulong*)block_ptr);
-			block_ptr += sizeof(ulong);
+			blockhash[j] = blockhash[j]^((__global ulong2*)block_ptr)[j];
+
 		}
 	}
 	blake2b_long(out, blockhash, outlen, BLOCK_SIZE);
@@ -253,7 +291,7 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 {
 	uint i;
 
-	ulong prev_block[128];
+	ulong2 prev_block[64];
 
 	uint next_block_offset;
 	uchar lanes = info->lanes;
@@ -277,10 +315,10 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 			return;
 
 		bi = prev_block_offset = (pos.lane * segment_length + 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
-		for (i = 0; i < 128; i++)
+		for (i = 0; i < 64; i++)
 		{
-			prev_block[i] = *(__global ulong *) (&memory[bi]);
-			bi += 8;
+			prev_block[i] = *(__global ulong2 *) (&memory[bi]);
+			bi += 16;
 		}
 
 		next_block_offset = (pos.lane * segment_length + 2) * BLOCK_SIZE;
@@ -299,10 +337,10 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 
 		prev_block_recalc = (pos.slice > 0) ? ((pos.slice - 1)*lanes*segment_length) : (SYNC_POINTS - 2)*lanes*segment_length;
 		bi = prev_block_offset = ((prev_slice * lanes + pos.lane + 1) * segment_length - 1) * BLOCK_SIZE;//<bi> -- temporary variable for loading previous block
-		for (i = 0; i < 128; i++)
+		for (i = 0; i < 64; i++)
 		{
-			prev_block[i] = *(__global ulong *) (&memory[bi]);
-			bi += 8;
+			prev_block[i] = *(__global ulong2 *) (&memory[bi]);
+			bi += 16;
 		}
 
 		phi = ((ulong *)prev_block)[0];
@@ -327,6 +365,7 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 		barrier3 = (i==0)? (barrier2 -lanes):(barrier2+ i-1);
 
 		r = barrier3;
+
 		reference_block_offset = (phi % r);
 
 		/*Excluding the previous block from referencing*/
@@ -377,7 +416,6 @@ static void FillMemory(const scheme_info_t* info)//Main loop: filling memory <t_
 	}
 }
 
-
 static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msglen, const uchar *nonce, uint noncelen, const uchar *secret,
 	uchar secretlen, const uchar *ad, uint adlen, uint t_cost, uint m_cost, uchar lanes, __global uchar *memory)
 {
@@ -416,7 +454,7 @@ static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 	if (m_cost < 2 * SYNC_POINTS*(uint)lanes)
 		m_cost = 2 * SYNC_POINTS*(uint)lanes;
 	if (m_cost>MAX_MEMORY)
-		m_cost = MAX_MEMORY;
+		return -6;
 
 	m_cost = (m_cost / (lanes*SYNC_POINTS))*(lanes*SYNC_POINTS); //Ensure that all segments have equal length;
 

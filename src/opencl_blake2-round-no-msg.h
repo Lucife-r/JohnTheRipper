@@ -11,71 +11,82 @@
    this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
 */
 
-#define G(a,b,c,d)		\
-	a = a + b ;		\
-	d = rotr64(d ^ a, 32);	\
-	c = c + d;		\
-	b = rotr64(b ^ c, 24);	\
-	a = a + b ;		\
-	d = rotr64(d ^ a, 16);	\
-	c = c + d;		\
-	b = rotr64(b ^ c, 63); 
-
-#define BLAKE2_ROUND_NO_MSG(v0,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15)  \
-	G((v0), (v4), (v8), (v12));	\
-	G((v1), (v5), (v9), (v13));	\
-	G((v2), (v6), (v10), (v14));	\
-	G((v3), (v7), (v11), (v15));	\
-	G((v0), (v5), (v10), (v15));	\
-	G((v1), (v6), (v11), (v12));	\
-	G((v2), (v7), (v8), (v13));	\
-	G((v3), (v4), (v9), (v14)); 
-
-#define G1_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
-	row1l = _mm_add_epi64(row1l, row2l); \
-	row1h = _mm_add_epi64(row1h, row2h); \
+#define G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+	row1l = row1l + row2l; \
+	row1h = row1h + row2h; \
 	\
-	row4l = _mm_xor_si128(row4l, row1l); \
-	row4h = _mm_xor_si128(row4h, row1h); \
+	row4l = row4l ^ row1l; \
+	row4h = row4h ^ row1h; \
 	\
-	row4l = _mm_roti_epi64(row4l, -32); \
-	row4h = _mm_roti_epi64(row4h, -32); \
+	row4l = rotate(row4l, -32); \
+	row4h = rotate(row4h, -32); \
 	\
-	row3l = _mm_add_epi64(row3l, row4l); \
-	row3h = _mm_add_epi64(row3h, row4h); \
+	row3l = row3l + row4l; \
+	row3h = row3h + row4h; \
 	\
-	row2l = _mm_xor_si128(row2l, row3l); \
-	row2h = _mm_xor_si128(row2h, row3h); \
+	row2l = row2l ^ row3l; \
+	row2h = row2h ^ row3h; \
 	\
-	row2l = _mm_roti_epi64(row2l, -24); \
-	row2h = _mm_roti_epi64(row2h, -24); \
+	row2l = rotate(row2l, -24); \
+	row2h = rotate(row2h, -24); \
  
-#define G2_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
-	row1l = _mm_add_epi64(row1l, row2l); \
-	row1h = _mm_add_epi64(row1h, row2h); \
+#define G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+	row1l = row1l + row2l; \
+	row1h = row1h + row2h; \
 	\
-	row4l = _mm_xor_si128(row4l, row1l); \
-	row4h = _mm_xor_si128(row4h, row1h); \
+	row4l = row4l ^ row1l; \
+	row4h = row4h ^ row1h; \
 	\
-	row4l = _mm_roti_epi64(row4l, -16); \
-	row4h = _mm_roti_epi64(row4h, -16); \
+	row4l = rotate(row4l, -16); \
+	row4h = rotate(row4h, -16); \
 	\
-	row3l = _mm_add_epi64(row3l, row4l); \
-	row3h = _mm_add_epi64(row3h, row4h); \
+	row3l = row3l + row4l; \
+	row3h = row3h + row4h; \
 	\
-	row2l = _mm_xor_si128(row2l, row3l); \
-	row2h = _mm_xor_si128(row2h, row3h); \
+	row2l = row2l ^ row3l; \
+	row2h = row2h ^ row3h; \
 	\
-	row2l = _mm_roti_epi64(row2l, -63); \
-	row2h = _mm_roti_epi64(row2h, -63); \
+	row2l = rotate(row2l, -63); \
+	row2h = rotate(row2h, -63); \
 
-#define BLAKE2_ROUND_NO_MSG_SSE(row1l,row1h,row2l,row2h,row3l,row3h,row4l,row4h) \
-	G1_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
-	G2_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+
+#define DIAGONALIZE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong2) (row2l.y, row2h.x); \
+  t1 = (ulong2) (row2h.y, row2l.x); \
+  row2l =t0;	\
+  row2h =t1;    \
+\
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0;    \
+  \
+  t0 = (ulong2) (row4l.y, row4h.x); \
+  t1 = (ulong2) (row4h.y, row4l.x); \
+  row4l = t1; \
+  row4h = t0;
+
+#define UNDIAGONALIZE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong2) (row2h.y, row2l.x); \
+  t1 = (ulong2) (row2l.y, row2h.x); \
+  row2l = t0; \
+  row2h = t1; \
+  \
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0; \
+  \
+  t0 = (ulong2) (row4h.y, row4l.x); \
+  t1 = (ulong2) (row4l.y, row4h.x); \
+  row4l = t1; \
+  row4h = t0;
+
+#define BLAKE2_ROUND_NO_MSG_V(row1l,row1h,row2l,row2h,row3l,row3h,row4l,row4h) \
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
 	\
 	DIAGONALIZE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
 	\
-	G1_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
-	G2_SSE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
 	\
 	UNDIAGONALIZE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h);
