@@ -24,7 +24,7 @@ struct argon2i_salt {
 	char salt[SALT_SIZE];
 };
 
-static void scheme_info_t_init(scheme_info_t *scheme, __global uchar* s, uint m, uint p, uchar l)
+static void scheme_info_t_init(scheme_info_t *scheme, __global ulong2* s, uint m, uint p, uchar l)
 {
 	scheme->state = s;
 	scheme->mem_size = m;
@@ -256,11 +256,11 @@ static void Initialize(scheme_info_t* info,uchar* input_hash)
 	{
 		block_input[BLAKE_INPUT_HASH_SIZE + 4] = l;
 		block_input[BLAKE_INPUT_HASH_SIZE] = 0;
-		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long((uchar*)out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
 		for(i=0;i<BLOCK_SIZE/16;i++)
 			memory[MAP(l * segment_length*BLOCK_SIZE/16+i)]=out_tmp[i];
 		block_input[BLAKE_INPUT_HASH_SIZE] = 1;
-		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long((uchar*)out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
 		for(i=0;i<BLOCK_SIZE/16;i++)
 			memory[MAP((l * segment_length + 1)*BLOCK_SIZE/16+i)]=out_tmp[i];
 	}
@@ -302,8 +302,8 @@ static void GenerateAddresses(const scheme_info_t* info, position_info_t* positi
 	input_block[2] = position->slice;
 	input_block[3] = position->index;
 	input_block[4] = 0xFFFFFFFF;
-	ComputeBlock((ulong*)input_block, zero_block, (uchar*)addresses);
-	ComputeBlock((ulong*)zero_block, (uchar*)addresses, (uchar*)addresses);
+	ComputeBlock((ulong2*)input_block, (ulong2*) zero_block, (ulong2*) addresses);
+	ComputeBlock((ulong2*)zero_block, (ulong2*) addresses, (ulong2*) addresses);
 
 
 	/*Making block offsets*/
@@ -450,7 +450,7 @@ static void FillMemory(const scheme_info_t* info)//Main loop: filling memory <t_
 
 
 static int Argon2i(__global uchar *out, uint outlen, const uchar *msg, uint msglen, const uchar *nonce, uint noncelen, const uchar *secret,
-	uchar secretlen, const uchar *ad, uint adlen, uint t_cost, uint m_cost, uchar lanes, __global void *memory)
+	uchar secretlen, const uchar *ad, uint adlen, uint t_cost, uint m_cost, uchar lanes, __global ulong2 *memory)
 {
 	uchar blockhash[BLAKE_INPUT_HASH_SIZE];//H_0 in the document
 	uchar out_tmp[BINARY_SIZE*10];
@@ -538,7 +538,7 @@ static int Argon2i(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 
 __kernel void argon2i_crypt_kernel(__global const uchar * in,
     __global const uint * index,
-    __global char *out,
+    __global uchar *out,
     __global struct argon2i_salt *salt,
     __global ulong2 *memory
 )

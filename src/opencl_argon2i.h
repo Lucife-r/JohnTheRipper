@@ -29,7 +29,7 @@
 
 typedef struct scheme_info_t_
 {
-	__global uchar *state;
+	__global ulong2 *state;
 	uint mem_size;
 	uint passes;
 	uint lanes;

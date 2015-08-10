@@ -24,7 +24,7 @@ struct argon2d_salt {
 	char salt[SALT_SIZE];
 };
 
-static void scheme_info_t_init(scheme_info_t *scheme, __global uchar* s, uint m, uint p, uchar l)
+static void scheme_info_t_init(scheme_info_t *scheme, __global ulong2* s, uint m, uint p, uchar l)
 {
 	scheme->state = s;
 	scheme->mem_size = m;
@@ -256,11 +256,11 @@ static void Initialize(scheme_info_t* info,uchar* input_hash)
 	{
 		block_input[BLAKE_INPUT_HASH_SIZE + 4] = l;
 		block_input[BLAKE_INPUT_HASH_SIZE] = 0;
-		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long((uchar*)out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
 		for(i=0;i<BLOCK_SIZE/16;i++)
 			memory[MAP(l * segment_length*BLOCK_SIZE/16+i)]=out_tmp[i];
 		block_input[BLAKE_INPUT_HASH_SIZE] = 1;
-		blake2b_long(out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
+		blake2b_long((uchar*)out_tmp, block_input, BLOCK_SIZE, BLAKE_INPUT_HASH_SIZE + 8);
 		for(i=0;i<BLOCK_SIZE/16;i++)
 			memory[MAP((l * segment_length + 1)*BLOCK_SIZE/16+i)]=out_tmp[i];
 	}
@@ -397,7 +397,7 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 	}
 }
 
-static void FillMemory(const scheme_info_t* info)//Main loop: filling memory <t_cost> times
+static void FillMemory(scheme_info_t* info)//Main loop: filling memory <t_cost> times
 {
 	uint p,s,t;
 	position_info_t position;
@@ -418,7 +418,7 @@ static void FillMemory(const scheme_info_t* info)//Main loop: filling memory <t_
 }
 
 static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msglen, const uchar *nonce, uint noncelen, const uchar *secret,
-	uchar secretlen, const uchar *ad, uint adlen, uint t_cost, uint m_cost, uchar lanes, __global uchar *memory)
+	uchar secretlen, const uchar *ad, uint adlen, uint t_cost, uint m_cost, uchar lanes, __global ulong2 *memory)
 {
 	uchar blockhash[BLAKE_INPUT_HASH_SIZE];//H_0 in the document
 	uchar out_tmp[BINARY_SIZE*10];
@@ -506,9 +506,9 @@ static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 
 __kernel void argon2d_crypt_kernel(__global const uchar * in,
     __global const uint * index,
-    __global char *out,
+    __global uchar *out,
     __global struct argon2d_salt *salt,
-    __global uchar *memory
+    __global ulong2 *memory
 )
 {
 	uint i;
@@ -540,7 +540,7 @@ __kernel void argon2d_crypt_kernel(__global const uchar * in,
 
 	in += base;
 	//memory+=gid;
-	memory+=gid*(((ulong)m_cost)<<10);
+	memory+=gid*(((ulong)m_cost)<<10)/sizeof(ulong2);
 
 	//copying password
 	for(i=0;i<inlen;i++)
