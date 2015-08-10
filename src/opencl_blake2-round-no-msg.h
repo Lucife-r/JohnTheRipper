@@ -9,6 +9,8 @@
 
    You should have received a copy of the CC0 Public Domain Dedication along with
    this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+   
+   modified in 2015 by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
 */
 
 #define G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \

@@ -249,7 +249,7 @@ static void reset_(uint64_t mem_size)
 
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE/4, 0);
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE/2, 0);
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 0, 1000);
