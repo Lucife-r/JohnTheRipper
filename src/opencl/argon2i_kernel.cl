@@ -465,23 +465,15 @@ static int Argon2i(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 
 	if (msglen> MAX_MSG)
 		msglen = MAX_MSG;
-	if (msglen < MIN_MSG)
-		return -2; //Password too short
 
-	if (noncelen < MIN_NONCE)
-		return -3; //Salt too short
 	if (noncelen> MAX_NONCE)
 		noncelen = MAX_NONCE;
 
 	if (secretlen> MAX_SECRET)
 		secretlen = MAX_SECRET;
-	if (secretlen < MIN_SECRET)
-		return -4; //Secret too short
 
 	if (adlen> MAX_AD)
 		adlen = MAX_AD;
-	if (adlen < MIN_AD)
-		return -5; //Associated data too short
 
 	//minumum m_cost =8L blocks, where L is the number of lanes
 	if (m_cost < 2 * SYNC_POINTS*(uint)lanes)

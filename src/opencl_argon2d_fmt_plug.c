@@ -56,10 +56,10 @@ static const char *warn[] = {
 static struct fmt_tests tests[] = {
 	{"$argon2d$1$1000$1$we_are_the_void$C59A6F62BC8ECBF0C0D98EB5D188058C895595ADC456811D438EBEE2F312355F","the_fatalist"},
 	{"$argon2d$1$1000$1$we_are_the_void$C59A6F62BC8ECBF0C0D98EB5D188058C895595ADC456811D438EBEE2F312355F","the_fatalist"},
-	/*{"$argon2d$3$100$1$salt_salt$30C1116A09CCF4F77CC10C9F07EAD680C2EC7CEC9E3BBDFC58D354BF203A24B0", "one_thought"},
+	{"$argon2d$3$100$1$salt_salt$30C1116A09CCF4F77CC10C9F07EAD680C2EC7CEC9E3BBDFC58D354BF203A24B0", "one_thought"},
 	{"$argon2d$3$100$1$salt_salt$CF71F3376C28CD05EFB51AB523D1FED12384AB64CD42455D7B418078358B3834", "the_wonders_at_your_feets"},
 	{"$argon2d$10$10$1$low_costs$0DE62C6FD56B37040EA8D82177BC0C883B051E67689BEA8E6AC54CB9EAA4DD3B", "blind_at_heart"},
-	{"$argon2d$5$50$1$another_salt$85EACDF4","her_silent_language"},*/
+	{"$argon2d$5$50$1$another_salt$85EACDF4","her_silent_language"},
 	{NULL}
 };
 
@@ -79,6 +79,7 @@ static char *output;
 static uint64_t MEM_SIZE;
 static struct argon2d_salt *saved_salt;
 static char *saved_key;
+static int clobj_allocated;
 
 static struct fmt_main *self;
 
@@ -106,6 +107,9 @@ static size_t get_default_workgroup()
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
+	if (clobj_allocated)
+		return;
+	clobj_allocated = 1;
 	cl_memory =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    MEM_SIZE * gws, NULL, &ret_code);
@@ -190,6 +194,9 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 
 static void release_clobj(void)
 {
+	if (!clobj_allocated)
+		return;
+	clobj_allocated = 0;
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_result,
 		output, 0, NULL, NULL), "Error Unmapping output");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_key,
@@ -223,10 +230,13 @@ static void release_clobj(void)
 
 static void done(void)
 {
-	release_clobj();
+	if(autotuned)
+	{
+		release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
-	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+		HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+	}
 }
 
 
@@ -247,9 +257,11 @@ static void reset_(uint64_t mem_size)
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel. Double-check kernel name?");
 
+	release_clobj();
+
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE/2, 0);
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE, 0);
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 0, 1000);
@@ -311,6 +323,7 @@ static void reset(struct db_main *db)
 
 static void init(struct fmt_main *_self)
 {
+	clobj_allocated = 0;
 	self = _self;
 }
 

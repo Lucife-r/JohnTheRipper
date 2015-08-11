@@ -79,85 +79,6 @@ static int blake2b_long(uchar *out, const void *in, const uint outlen, const ulo
 }
 
 
-static void ComputeBlock(ulong2 *state, ulong2 *ref_block_ptr, ulong2 *next_block_ptr)
-{
-	ulong2 ref_block[64];
-	uchar i;
-
-	ulong2 t0,t1;
-	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
-	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
-
-	for (i = 0; i < 64; i++)
-	{
-		ref_block[i] = ref_block_ptr[i];
-	}
-
-	for (i = 0; i < 64; i++)
-	{
-		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
-	}
-
-
-	// BLAKE2 - begin
-
-	BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
-		state[4], state[5], state[6], state[7]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
-		state[12], state[13], state[14], state[15]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
-		state[20], state[21], state[22], state[23]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
-		state[28], state[29], state[30], state[31]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
-		state[36], state[37], state[38], state[39]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
-		state[44], state[45], state[46], state[47]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
-		state[52], state[53], state[54], state[55]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
-		state[60], state[61], state[62], state[63]);
-
-
-	BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
-		state[32], state[40], state[48], state[56]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
-		state[33], state[41], state[49], state[57]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
-		state[34], state[42], state[50], state[58]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
-		state[35], state[43], state[51], state[59]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
-		state[36], state[44], state[52], state[60]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
-		state[37], state[45], state[53], state[61]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
-		state[38], state[46], state[54], state[62]);
-
-	BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
-		state[39], state[47], state[55], state[63]);
-
-	// BLAKE2 - end
-
-	for (i = 0; i< 64; i++)
-	{
-		next_block_ptr[i] =state[i] = state[i] ^ ref_block[i]; //Feedback
-	}
-}
-
 static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __global ulong2 *next_block_ptr)
 {
 	ulong2 ref_block[64];
@@ -433,23 +354,15 @@ static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 
 	if (msglen> MAX_MSG)
 		msglen = MAX_MSG;
-	if (msglen < MIN_MSG)
-		return -2; //Password too short
 
-	if (noncelen < MIN_NONCE)
-		return -3; //Salt too short
 	if (noncelen> MAX_NONCE)
 		noncelen = MAX_NONCE;
 
 	if (secretlen> MAX_SECRET)
 		secretlen = MAX_SECRET;
-	if (secretlen < MIN_SECRET)
-		return -4; //Secret too short
 
 	if (adlen> MAX_AD)
 		adlen = MAX_AD;
-	if (adlen < MIN_AD)
-		return -5; //Associated data too short
 
 	//minumum m_cost =8L blocks, where L is the number of lanes
 	if (m_cost < 2 * SYNC_POINTS*(uint)lanes)
@@ -513,7 +426,6 @@ __kernel void argon2d_crypt_kernel(__global const uchar * in,
 {
 	uint i;
 	uint gid;
-	uint GID;
 
 	uint m_cost, t_cost;
 	uchar lanes;

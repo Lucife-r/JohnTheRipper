@@ -79,6 +79,7 @@ static char *output;
 static uint64_t MEM_SIZE;
 static struct argon2i_salt *saved_salt;
 static char *saved_key;
+static int clobj_allocated;
 
 static struct fmt_main *self;
 
@@ -106,6 +107,9 @@ static size_t get_default_workgroup()
 
 static void create_clobj(size_t gws, struct fmt_main *self)
 {
+	if (clobj_allocated)
+		return;
+	clobj_allocated = 1;
 	cl_memory =
 	    clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE,
 	    MEM_SIZE * gws, NULL, &ret_code);
@@ -190,6 +194,9 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 
 static void release_clobj(void)
 {
+	if (!clobj_allocated)
+		return;
+	clobj_allocated = 0;
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_result,
 		output, 0, NULL, NULL), "Error Unmapping output");
 	HANDLE_CLERROR(clEnqueueUnmapMemObject(queue[gpu_id], pinned_key,
@@ -223,10 +230,13 @@ static void release_clobj(void)
 
 static void done(void)
 {
-	release_clobj();
+	if(autotuned)
+	{
+		release_clobj();
 
-	HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
-	HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+		HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
+	}
 }
 
 
@@ -247,9 +257,11 @@ static void reset_(uint64_t mem_size)
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel. Double-check kernel name?");
 
+	release_clobj();
+
 	//Initialize openCL tuning (library) for this format.
 	opencl_init_auto_setup(SEED, 0, NULL,
-	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE/2, 0);
+	    warn, 4, self, create_clobj, release_clobj, MEM_SIZE, 0);
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 0, 1000);
@@ -311,6 +323,7 @@ static void reset(struct db_main *db)
 
 static void init(struct fmt_main *_self)
 {
+	clobj_allocated = 0;
 	self = _self;
 }
 
@@ -363,7 +376,7 @@ static int valid(char *ciphertext, struct fmt_main *self)
 
 	salt->m_cost = (salt->m_cost / (salt->lanes*SYNC_POINTS))*(salt->lanes*SYNC_POINTS); //Ensure that all segments have equal length;
 
-	//minimum t_cost =1
+	//minimum t_cost =3
 	if (salt->t_cost<MIN_TIME)
 		return 0;
 

@@ -8,13 +8,9 @@
 #define MIN_MEMORY 1
 #define MAX_MEMORY 0xFFFFFFFF
 #define MIN_TIME 1
-#define MIN_MSG 0
 #define MAX_MSG 0xFFFFFFFF
-#define MIN_AD  0
 #define MAX_AD 0xFFFFFFFF
 #define MAX_NONCE  0xFFFFFFFF
-#define MIN_NONCE 0
-#define MIN_SECRET  0
 #define MAX_SECRET 32
 #define BLOCK_SIZE_KILOBYTE 1
 #define BYTES_IN_BLOCK (1024*BLOCK_SIZE_KILOBYTE)
