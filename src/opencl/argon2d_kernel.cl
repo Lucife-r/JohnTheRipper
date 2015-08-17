@@ -226,7 +226,6 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 	//uint stop = segment_length;//Number of blocks to produce in the segment, is different for the first slice, first pass
 	uint start=0;
 
-	uint prev_block_offset; //offset of previous block
 	uint prev_block_recalc=0; //number of the first block in the reference area in the previous slice
 
 	if(0 == pos.pass && 0 == pos.slice) // First pass; first slice
@@ -238,7 +237,7 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 		if (segment_length <= 2)
 			return;
 
-		bi = prev_block_offset = (pos.lane * segment_length + 1) * BLOCK_SIZE / 16;//<bi> -- temporary variable for loading previous block
+		bi = (pos.lane * segment_length + 1) * BLOCK_SIZE / 16;//<bi> -- temporary variable for loading previous block
 		for (i = 0; i < 64; i++)
 		{
 			prev_block[i] = memory[MAP(bi+i)];
@@ -259,7 +258,7 @@ static void FillSegment(scheme_info_t *info, position_info_t pos)
 		uint bi;
 
 		prev_block_recalc = (pos.slice > 0) ? ((pos.slice - 1)*lanes*segment_length) : (SYNC_POINTS - 2)*lanes*segment_length;
-		bi = prev_block_offset = ((prev_slice * lanes + pos.lane + 1) * segment_length - 1) * BLOCK_SIZE / 16;//<bi> -- temporary variable for loading previous block
+		bi = ((prev_slice * lanes + pos.lane + 1) * segment_length - 1) * BLOCK_SIZE / 16;//<bi> -- temporary variable for loading previous block
 		for (i = 0; i < 64; i++)
 		{
 			prev_block[i] = memory[MAP(bi+i)];
@@ -417,8 +416,9 @@ static int argon2d(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 }
 
 
-__kernel void argon2d_crypt_kernel(__global const uchar * in,
-    __global const uint * index,
+__kernel void argon2d_crypt_kernel(
+    __global const uchar * in,
+    __global const uint * lengths,
     __global uchar *out,
     __global struct argon2d_salt *salt,
     __global ulong2 *memory
@@ -431,7 +431,7 @@ __kernel void argon2d_crypt_kernel(__global const uchar * in,
 	uchar lanes;
 	uint outlen, noncelen;
 
-	uint base, inlen;
+	uint inlen;
 
 	uchar passwd[PLAINTEXT_LENGTH];
 	uchar nonce[SALT_SIZE];
@@ -440,8 +440,7 @@ __kernel void argon2d_crypt_kernel(__global const uchar * in,
 
 	out += gid * BINARY_SIZE;
 
-	base = index[gid];
-	inlen = index[gid + 1] - base;
+	inlen = lengths[gid];
 
 	outlen = salt->hash_size;
 	noncelen = salt->salt_length;
@@ -450,7 +449,7 @@ __kernel void argon2d_crypt_kernel(__global const uchar * in,
 	m_cost = salt->m_cost;
 	lanes=salt->lanes;
 
-	in += base;
+	in += gid*PLAINTEXT_LENGTH;
 	//memory+=gid;
 	memory+=gid*(((ulong)m_cost)<<10)/sizeof(ulong2);
 

@@ -528,8 +528,9 @@ static int Argon2i(__global uchar *out, uint outlen, const uchar *msg, uint msgl
 }
 
 
-__kernel void argon2i_crypt_kernel(__global const uchar * in,
-    __global const uint * index,
+__kernel void argon2i_crypt_kernel(
+    __global const uchar * in,
+    __global const uint * lengths,
     __global uchar *out,
     __global struct argon2i_salt *salt,
     __global ulong2 *memory
@@ -542,7 +543,7 @@ __kernel void argon2i_crypt_kernel(__global const uchar * in,
 	uchar lanes;
 	uint outlen, noncelen;
 
-	uint base, inlen;
+	uint inlen;
 
 	uchar passwd[PLAINTEXT_LENGTH];
 	uchar nonce[SALT_SIZE];
@@ -551,8 +552,7 @@ __kernel void argon2i_crypt_kernel(__global const uchar * in,
 
 	out += gid * BINARY_SIZE;
 
-	base = index[gid];
-	inlen = index[gid + 1] - base;
+	inlen = lengths[gid];
 
 	outlen = salt->hash_size;
 	noncelen = salt->salt_length;
@@ -561,7 +561,7 @@ __kernel void argon2i_crypt_kernel(__global const uchar * in,
 	m_cost = salt->m_cost;
 	lanes=salt->lanes;
 
-	in += base;
+	in += gid*PLAINTEXT_LENGTH;
 	//memory=(__global uchar*)memory+gid*(((ulong)m_cost)<<10);
 	memory+=gid;
 
