@@ -78,24 +78,11 @@ static int blake2b_long(uchar *out, const void *in, const uint outlen, const ulo
 	return 0;
 }
 
-static void ComputeBlock(ulong2 *state, ulong2 *ref_block_ptr, ulong2 *next_block_ptr)
+static void ComputeBlock(ulong2 *state)
 {
-	ulong2 ref_block[64];
-	uchar i;
-
 	ulong2 t0,t1;
 	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
 	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
-
-	for (i = 0; i < 64; i++)
-	{
-		ref_block[i] = ref_block_ptr[i];
-	}
-
-	for (i = 0; i < 64; i++)
-	{
-		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
-	}
 
 
 	// BLAKE2 - begin
@@ -150,12 +137,6 @@ static void ComputeBlock(ulong2 *state, ulong2 *ref_block_ptr, ulong2 *next_bloc
 		state[39], state[47], state[55], state[63]);
 
 	// BLAKE2 - end
-
-	for (i = 0; i< 64; i++)
-	{
-		state[i] = state[i] ^ ref_block[i]; //Feedback
-		next_block_ptr[i]=state[i];
-	}
 }
 
 
@@ -248,7 +229,7 @@ static void Initialize(scheme_info_t* info,uchar* input_hash)
 	uint i;
 	__global ulong2 *memory=info->state;
 	uchar block_input[BLAKE_INPUT_HASH_SIZE + 8];
-	ulong2 out_tmp[BLOCK_SIZE/8];
+	ulong2 out_tmp[BLOCK_SIZE/16];
 	uint segment_length = (info->mem_size / (SYNC_POINTS*(info->lanes)));
 	memcpy(block_input, input_hash, BLAKE_INPUT_HASH_SIZE);
 	memset(block_input + BLAKE_INPUT_HASH_SIZE, 0, 8);
@@ -289,22 +270,29 @@ static void Finalize_g(__global ulong2 *state, uchar* out, uint outlen, uchar la
 static void GenerateAddresses(const scheme_info_t* info, position_info_t* position, uint* addresses)//generate 256 addresses
 {
 	uint i;
-	uchar zero_block[BLOCK_SIZE];
-	uint input_block[BLOCK_SIZE/4];
+	uint prev_block[256];
 	uint segment_length;
 	uint barrier1; //Number of blocks generated in previous slices
 	uint barrier2; //Number of blocks that we can reference in total (including the last blocks of each lane
 	uint start = 0;
-	memset(zero_block, 0,BLOCK_SIZE);
-	memset(input_block, 0, 256 * sizeof(uint));
-	input_block[0] = position->pass;
-	input_block[1] = position->lane;
-	input_block[2] = position->slice;
-	input_block[3] = position->index;
-	input_block[4] = 0xFFFFFFFF;
-	ComputeBlock((ulong2*)input_block, (ulong2*) zero_block, (ulong2*) addresses);
-	ComputeBlock((ulong2*)zero_block, (ulong2*) addresses, (ulong2*) addresses);
-
+	addresses[0] = position->pass;
+	addresses[1] = position->lane;
+	addresses[2] = position->slice;
+	addresses[3] = position->index;
+	addresses[4] = 0xFFFFFFFF;
+	for (i = 5; i < 256; i++)
+		addresses[i] = 0;
+	ComputeBlock((ulong2 *)addresses);
+	addresses[0] ^= position->pass;
+	addresses[1] ^= position->lane;
+	addresses[2] ^= position->slice;
+	addresses[3] ^= position->index;
+	addresses[4] ^= 0xFFFFFFFF;
+	for (i = 0; i < 256; i++)
+		prev_block[i] = addresses[i];
+	ComputeBlock((ulong2 *)addresses);
+	for (i = 0; i < 256; i++)
+		addresses[i] ^= prev_block[i];
 
 	/*Making block offsets*/
 	segment_length = info->mem_size / ((info->lanes)*SYNC_POINTS);
