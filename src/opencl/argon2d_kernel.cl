@@ -84,7 +84,7 @@ static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __gl
 	ulong2 ref_block[64];
 	uchar i;
 
-	ulong8 t0,t1;
+	ulong16 t0,t1;
 	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
 	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
 
@@ -95,136 +95,56 @@ static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __gl
 
 	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
+		ref_block[i]  = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
 	}
 
+	for(i = 0; i < 8; i++)
+	{
+		state[i*8] = ref_block[i];
+		state[i*8+1] = ref_block[i+8];
+		state[i*8+2] = ref_block[i+16];
+		state[i*8+3] = ref_block[i+24];
+		state[i*8+4] = ref_block[i+32];
+		state[i*8+5] = ref_block[i+40];
+		state[i*8+6] = ref_block[i+48];
+		state[i*8+7] = ref_block[i+56];
+	}
 
 	// BLAKE2 - begin
 
-	ulong8 v1=(ulong8) (state[0+0], state[8+0], state[16+0], state[24+0]);
-	#define A 1
-	ulong8 v2=(ulong8) (state[0+1], state[8+1], state[16+1], state[24+1]);
-	#define A 2
-	ulong8 v3=(ulong8) (state[0+2], state[8+2], state[16+2], state[24+2]);
-	#define A 3
-	ulong8 v4=(ulong8) (state[0+3], state[8+3], state[16+3], state[24+3]);
-	#define A 4
-	ulong8 v5=(ulong8) (state[0+4], state[8+4], state[16+4], state[24+4]);
-	#define A 5
-	ulong8 v6=(ulong8) (state[0+5], state[8+5], state[16+5], state[24+5]);
-	#define A 6
-	ulong8 v7=(ulong8) (state[0+6], state[8+6], state[16+6], state[24+6]);
-	#define A 7
-	ulong8 v8=(ulong8) (state[0+7], state[8+7], state[16+7], state[24+7]);
+	ulong16 v1=(ulong16) ((ulong16*)state)[0];
+	ulong16 v2=(ulong16) ((ulong16*)state)[1];
+	ulong16 v3=(ulong16) ((ulong16*)state)[2];
+	ulong16 v4=(ulong16) ((ulong16*)state)[3];
+	ulong16 v5=(ulong16) ((ulong16*)state)[4];
+	ulong16 v6=(ulong16) ((ulong16*)state)[5];
+	ulong16 v7=(ulong16) ((ulong16*)state)[6];
+	ulong16 v8=(ulong16) ((ulong16*)state)[7];
 
-	BLAKE2_ROUND_NO_MSG_V8(v1,v2,v3,v4,v5,v6,v7,v8);
+	BLAKE2_ROUND_NO_MSG_V16(v1,v2,v3,v4,v5,v6,v7,v8);
 
-	#define A 0
-	state[0+A]=v1.s01;
-	state[1+A]=v2.s01;
-	state[2+A]=v3.s01;
-	state[3+A]=v4.s01;
-	state[4+A]=v5.s01;
-	state[5+A]=v6.s01;
-	state[6+A]=v7.s01;
-	state[7+A]=v8.s01;
+	ulong16 v1c,v2c,v3c,v4c,v5c,v6c,v7c,v8c;
 
-	#define A 8
-	state[0+A]=v1.s23;
-	state[1+A]=v2.s23;
-	state[2+A]=v3.s23;
-	state[3+A]=v4.s23;
-	state[4+A]=v5.s23;
-	state[5+A]=v6.s23;
-	state[6+A]=v7.s23;
-	state[7+A]=v8.s23;
-
-	#define A 16
-	state[0+A]=v1.s45;
-	state[1+A]=v2.s45;
-	state[2+A]=v3.s45;
-	state[3+A]=v4.s45;
-	state[4+A]=v5.s45;
-	state[5+A]=v6.s45;
-	state[6+A]=v7.s45;
-	state[7+A]=v8.s45;
-
-	#define A 24
-	state[0+A]=v1.s67;
-	state[1+A]=v2.s67;
-	state[2+A]=v3.s67;
-	state[3+A]=v4.s67;
-	state[4+A]=v5.s67;
-	state[5+A]=v6.s67;
-	state[6+A]=v7.s67;
-	state[7+A]=v8.s67;
+	v1c=(ulong16) (v1.s01, v2.s01, v3.s01, v4.s01, v5.s01, v6.s01, v7.s01, v8.s01);
+	v2c=(ulong16) (v1.s23, v2.s23, v3.s23, v4.s23, v5.s23, v6.s23, v7.s23, v8.s23);
+	v3c=(ulong16) (v1.s45, v2.s45, v3.s45, v4.s45, v5.s45, v6.s45, v7.s45, v8.s45);
+	v4c=(ulong16) (v1.s67, v2.s67, v3.s67, v4.s67, v5.s67, v6.s67, v7.s67, v8.s67);
+	v5c=(ulong16) (v1.s89, v2.s89, v3.s89, v4.s89, v5.s89, v6.s89, v7.s89, v8.s89);
+	v6c=(ulong16) (v1.sab, v2.sab, v3.sab, v4.sab, v5.sab, v6.sab, v7.sab, v8.sab);
+	v7c=(ulong16) (v1.scd, v2.scd, v3.scd, v4.scd, v5.scd, v6.scd, v7.scd, v8.scd);
+	v8c=(ulong16) (v1.sef, v2.sef, v3.sef, v4.sef, v5.sef, v6.sef, v7.sef, v8.sef);
 
 
-	#define A 0
-	v1=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 1
-	v2=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 2
-	v3=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 3
-	v4=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 4
-	v5=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 5
-	v6=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 6
-	v7=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
-	#define A 7
-	v8=(ulong8) (state[32+A], state[40+A], state[48+A], state[56+A]);
+	BLAKE2_ROUND_NO_MSG_V16(v1c, v2c, v3c, v4c, v5c, v6c, v7c, v8c);
 
-	BLAKE2_ROUND_NO_MSG_V8(v1,v2,v3,v4,v5,v6,v7,v8);
-
-	#define A 32
-	state[0+A]=v1.s01;
-	state[1+A]=v2.s01;
-	state[2+A]=v3.s01;
-	state[3+A]=v4.s01;
-	state[4+A]=v5.s01;
-	state[5+A]=v6.s01;
-	state[6+A]=v7.s01;
-	state[7+A]=v8.s01;
-
-	#define A 40
-	state[0+A]=v1.s23;
-	state[1+A]=v2.s23;
-	state[2+A]=v3.s23;
-	state[3+A]=v4.s23;
-	state[4+A]=v5.s23;
-	state[5+A]=v6.s23;
-	state[6+A]=v7.s23;
-	state[7+A]=v8.s23;
-
-	#define A 48
-	state[0+A]=v1.s45;
-	state[1+A]=v2.s45;
-	state[2+A]=v3.s45;
-	state[3+A]=v4.s45;
-	state[4+A]=v5.s45;
-	state[5+A]=v6.s45;
-	state[6+A]=v7.s45;
-	state[7+A]=v8.s45;
-
-	#define A 56
-	state[0+A]=v1.s67;
-	state[1+A]=v2.s67;
-	state[2+A]=v3.s67;
-	state[3+A]=v4.s67;
-	state[4+A]=v5.s67;
-	state[5+A]=v6.s67;
-	state[6+A]=v7.s67;
-	state[7+A]=v8.s67;
-
-
-	BLAKE2_ROUND_NO_MSG_V8(((ulong8*)state)[0], ((ulong8*)state)[2], ((ulong8*)state)[4], ((ulong8*)state)[6],
-		((ulong8*)state)[8], ((ulong8*)state)[10], ((ulong8*)state)[12], ((ulong8*)state)[14]);
-
-	BLAKE2_ROUND_NO_MSG_V8(((ulong8*)state)[1], ((ulong8*)state)[3], ((ulong8*)state)[5], ((ulong8*)state)[7],
-		((ulong8*)state)[9], ((ulong8*)state)[11], ((ulong8*)state)[13], ((ulong8*)state)[15]);
+	((ulong16*)state)[0] = v1c;
+	((ulong16*)state)[1] = v2c;
+	((ulong16*)state)[2] = v3c;
+	((ulong16*)state)[3] = v4c;
+	((ulong16*)state)[4] = v5c;
+	((ulong16*)state)[5] = v6c;
+	((ulong16*)state)[6] = v7c;
+	((ulong16*)state)[7] = v8c;
 
 	// BLAKE2 - end
 

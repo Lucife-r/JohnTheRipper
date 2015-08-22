@@ -135,3 +135,46 @@
 	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
 	\
 	UNDIAGONALIZE8(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h);
+
+
+#define DIAGONALIZE16(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong16) (row2l.s1, row2h.s0, row2l.s3, row2h.s2, row2l.s5, row2h.s4, row2l.s7, row2h.s6, row2l.s9, row2h.s8, row2l.sb, row2h.sa, row2l.sd, row2h.sc, row2l.sf, row2h.se); \
+  t1 = (ulong16) (row2h.s1, row2l.s0, row2h.s3, row2l.s2, row2h.s5, row2l.s4, row2h.s7, row2l.s6, row2h.s9, row2l.s8, row2h.sb, row2l.sa, row2h.sd, row2l.sc, row2h.sf, row2l.se); \
+  row2l =t0;	\
+  row2h =t1;    \
+\
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0;    \
+  \
+  t0 = (ulong16) (row4l.s1, row4h.s0, row4l.s3, row4h.s2, row4l.s5, row4h.s4, row4l.s7, row4h.s6, row4l.s9, row4h.s8, row4l.sb, row4h.sa, row4l.sd, row4h.sc, row4l.sf, row4h.se); \
+  t1 = (ulong16) (row4h.s1, row4l.s0, row4h.s3, row4l.s2, row4h.s5, row4l.s4, row4h.s7, row4l.s6, row4h.s9, row4l.s8, row4h.sb, row4l.sa, row4h.sd, row4l.sc, row4h.sf, row4l.se); \
+  row4l = t1; \
+  row4h = t0;
+
+#define UNDIAGONALIZE16(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong16) (row2h.s1, row2l.s0, row2h.s3, row2l.s2, row2h.s5, row2l.s4, row2h.s7, row2l.s6, row2h.s9, row2l.s8, row2h.sb, row2l.sa, row2h.sd, row2l.sc, row2h.sf, row2l.se); \
+  t1 = (ulong16) (row2l.s1, row2h.s0, row2l.s3, row2h.s2, row2l.s5, row2h.s4, row2l.s7, row2h.s6, row2l.s9, row2h.s8, row2l.sb, row2h.sa, row2l.sd, row2h.sc, row2l.sf, row2h.se); \
+  row2l = t0; \
+  row2h = t1; \
+  \
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0; \
+  \
+  t0 = (ulong16) (row4h.s1, row4l.s0, row4h.s3, row4l.s2, row4h.s5, row4l.s4, row4h.s7, row4l.s6, row4h.s9, row4l.s8, row4h.sb, row4l.sa, row4h.sd, row4l.sc, row4h.sf, row4l.se); \
+  t1 = (ulong16) (row4l.s1, row4h.s0, row4l.s3, row4h.s2, row4l.s5, row4h.s4, row4l.s7, row4h.s6, row4l.s9, row4h.s8, row4l.sb, row4h.sa, row4l.sd, row4h.sc, row4l.sf, row4h.se); \
+  row4l = t1; \
+  row4h = t0;
+
+
+#define BLAKE2_ROUND_NO_MSG_V16(row1l,row1h,row2l,row2h,row3l,row3h,row4l,row4h) \
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	DIAGONALIZE16(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	UNDIAGONALIZE16(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h);
