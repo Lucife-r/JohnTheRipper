@@ -178,30 +178,24 @@ static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __gl
 	BLAKE2_ROUND_NO_MSG_V8(v2, v4, v6, v8, v10, v12, v14, v16);
 
 
-	(((ulong8 *)state)[0]) = v1;
-	(((ulong8 *)state)[1]) = v2;
-	(((ulong8 *)state)[2]) = v3;
-	(((ulong8 *)state)[3]) = v4;
-	(((ulong8 *)state)[4]) = v5;
-	(((ulong8 *)state)[5]) = v6;
-	(((ulong8 *)state)[6]) = v7;
-	(((ulong8 *)state)[7]) = v8;
+	(((ulong8 *)state)[0]) = v1 ^ ((ulong8*)ref_block)[0];
+	(((ulong8 *)state)[1]) = v2 ^ ((ulong8*)ref_block)[1];
+	(((ulong8 *)state)[2]) = v3 ^ ((ulong8*)ref_block)[2];
+	(((ulong8 *)state)[3]) = v4 ^ ((ulong8*)ref_block)[3];
+	(((ulong8 *)state)[4]) = v5 ^ ((ulong8*)ref_block)[4];
+	(((ulong8 *)state)[5]) = v6 ^ ((ulong8*)ref_block)[5];
+	(((ulong8 *)state)[6]) = v7 ^ ((ulong8*)ref_block)[6];
+	(((ulong8 *)state)[7]) = v8 ^ ((ulong8*)ref_block)[7];
 
-	(((ulong8 *)state)[8]) = v9;
-	(((ulong8 *)state)[9]) = v10;
-	(((ulong8 *)state)[10]) = v11;
-	(((ulong8 *)state)[11]) = v12;
-	(((ulong8 *)state)[12]) = v13;
-	(((ulong8 *)state)[13]) = v14;
-	(((ulong8 *)state)[14]) = v15;
-	(((ulong8 *)state)[15]) = v16;
+	(((ulong8 *)state)[8]) = v9 ^ ((ulong8*)ref_block)[8];
+	(((ulong8 *)state)[9]) = v10 ^ ((ulong8*)ref_block)[9];
+	(((ulong8 *)state)[10]) = v11 ^ ((ulong8*)ref_block)[10];
+	(((ulong8 *)state)[11]) = v12 ^ ((ulong8*)ref_block)[11];
+	(((ulong8 *)state)[12]) = v13 ^ ((ulong8*)ref_block)[12];
+	(((ulong8 *)state)[13]) = v14 ^ ((ulong8*)ref_block)[13];
+	(((ulong8 *)state)[14]) = v15 ^ ((ulong8*)ref_block)[14];
+	(((ulong8 *)state)[15]) = v16 ^ ((ulong8*)ref_block)[15];
 
-	// BLAKE2 - end
-
-	for (i = 0; i< 64; i++)
-	{
-		state[i] = state[i] ^ ref_block[i]; //Feedback
-	}
 
 	for (i = 0; i< 64; i++)
 	{
