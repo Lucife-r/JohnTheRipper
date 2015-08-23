@@ -92,3 +92,44 @@
 	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
 	\
 	UNDIAGONALIZE(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h);
+
+#define DIAGONALIZE8(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong8) (row2l.s1, row2h.s0, row2l.s3, row2h.s2, row2l.s5, row2h.s4, row2l.s7, row2h.s6); \
+  t1 = (ulong8) (row2h.s1, row2l.s0, row2h.s3, row2l.s2, row2h.s5, row2l.s4, row2h.s7, row2l.s6); \
+  row2l =t0;	\
+  row2h =t1;    \
+\
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0;    \
+  \
+  t0 = (ulong8) (row4l.s1, row4h.s0, row4l.s3, row4h.s2, row4l.s5, row4h.s4, row4l.s7, row4h.s6); \
+  t1 = (ulong8) (row4h.s1, row4l.s0, row4h.s3, row4l.s2, row4h.s5, row4l.s4, row4h.s7, row4l.s6); \
+  row4l = t1; \
+  row4h = t0;
+
+#define UNDIAGONALIZE8(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
+  t0 = (ulong8) (row2h.s1, row2l.s0, row2h.s3, row2l.s2, row2h.s5, row2l.s4, row2h.s7, row2l.s6); \
+  t1 = (ulong8) (row2l.s1, row2h.s0, row2l.s3, row2h.s2, row2l.s5, row2h.s4, row2l.s7, row2h.s6); \
+  row2l = t0; \
+  row2h = t1; \
+  \
+  t0 = row3l; \
+  row3l = row3h; \
+  row3h = t0; \
+  \
+  t0 = (ulong8) (row4h.s1, row4l.s0, row4h.s3, row4l.s2, row4h.s5, row4l.s4, row4h.s7, row4l.s6); \
+  t1 = (ulong8) (row4l.s1, row4h.s0, row4l.s3, row4h.s2, row4l.s5, row4h.s4, row4l.s7, row4h.s6); \
+  row4l = t1; \
+  row4h = t0;
+
+#define BLAKE2_ROUND_NO_MSG_V8(row1l,row1h,row2l,row2h,row3l,row3h,row4l,row4h) \
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	DIAGONALIZE8(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h); \
+	\
+	UNDIAGONALIZE8(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h);

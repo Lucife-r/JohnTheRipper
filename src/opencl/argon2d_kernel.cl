@@ -78,13 +78,15 @@ static int blake2b_long(uchar *out, const void *in, const uint outlen, const ulo
 	return 0;
 }
 
+#define MAX_LWS 8
 
 static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __global ulong2 *next_block_ptr)
 {
 	ulong2 ref_block[64];
+	uchar g=get_local_id(0)%4;
 	uchar i;
 
-	ulong2 t0,t1;
+	ulong8 t0,t1;
 	uchar16 r16 = (uchar16) (2, 3, 4, 5, 6, 7, 0, 1, 10, 11, 12, 13, 14, 15, 8, 9);
 	uchar16 r24 = (uchar16) (3, 4, 5, 6, 7, 0, 1, 2, 11, 12, 13, 14, 15, 8, 9, 10);
 
@@ -95,60 +97,119 @@ static void ComputeBlock_pgg(ulong2 *state, __global ulong2 *ref_block_ptr, __gl
 
 	for (i = 0; i < 64; i++)
 	{
-		ref_block[i] = state[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
+		ref_block[i] = state[i] ^ ref_block[i]; //XORing the reference block to the state and storing the copy of the result
 	}
+
+	__local ulong8 lstate_[MAX_LWS*64/4];
+	__local ulong8 *lstate=lstate_;
+	lstate+=4*64/4*((get_local_id(0)%MAX_LWS)/4);
+
+	for(i=0;i<64;i++)
+	{
+		((__local ulong2*)lstate)[i*4+g]=ref_block[i];
+	}
+	
+	barrier(CLK_LOCAL_MEM_FENCE);
 
 
 	// BLAKE2 - begin
+	ulong8 v1,v2,v3,v4,v5,v6,v7,v8;
+	
+	uchar gg=g*16;
 
-	BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
-		state[4], state[5], state[6], state[7]);
+	v1=lstate[0+gg];
+	v2=lstate[1+gg];
+	v3=lstate[2+gg];
+	v4=lstate[3+gg];
+	v5=lstate[4+gg];
+	v6=lstate[5+gg];
+	v7=lstate[6+gg];
+	v8=lstate[7+gg];
+	
 
-	BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
-		state[12], state[13], state[14], state[15]);
+	BLAKE2_ROUND_NO_MSG_V8(v1, v2, v3, v4, v5, v6, v7, v8);
 
-	BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
-		state[20], state[21], state[22], state[23]);
+	lstate[0+gg]=v1;
+	lstate[1+gg]=v2;
+	lstate[2+gg]=v3;
+	lstate[3+gg]=v4;
+	lstate[4+gg]=v5;
+	lstate[5+gg]=v6;
+	lstate[6+gg]=v7;
+	lstate[7+gg]=v8;
 
-	BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
-		state[28], state[29], state[30], state[31]);
+	v1=lstate[8+gg];
+	v2=lstate[9+gg];
+	v3=lstate[10+gg];
+	v4=lstate[11+gg];
+	v5=lstate[12+gg];
+	v6=lstate[13+gg];
+	v7=lstate[14+gg];
+	v8=lstate[15+gg];
 
-	BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
-		state[36], state[37], state[38], state[39]);
+	BLAKE2_ROUND_NO_MSG_V8(v1, v2, v3, v4, v5, v6, v7, v8);
 
-	BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
-		state[44], state[45], state[46], state[47]);
+	lstate[8+gg]=v1;
+	lstate[9+gg]=v2;
+	lstate[10+gg]=v3;
+	lstate[11+gg]=v4;
+	lstate[12+gg]=v5;
+	lstate[13+gg]=v6;
+	lstate[14+gg]=v7;
+	lstate[15+gg]=v8;
 
-	BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
-		state[52], state[53], state[54], state[55]);
+	uint g2=g*2;
 
-	BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
-		state[60], state[61], state[62], state[63]);
+	barrier(CLK_LOCAL_MEM_FENCE);
 
+	v1=lstate[0+g2];
+	v2=lstate[8+g2];
+	v3=lstate[16+g2];
+	v4=lstate[24+g2];
+	v5=lstate[32+g2];
+	v6=lstate[40+g2];
+	v7=lstate[48+g2];
+	v8=lstate[56+g2];
 
-	BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
-		state[32], state[40], state[48], state[56]);
+	BLAKE2_ROUND_NO_MSG_V8(v1, v2, v3, v4, v5, v6, v7, v8);
 
-	BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
-		state[33], state[41], state[49], state[57]);
+	lstate[0+g2]=v1;
+	lstate[8+g2]=v2;
+	lstate[16+g2]=v3;
+	lstate[24+g2]=v4;
+	lstate[32+g2]=v5;
+	lstate[40+g2]=v6;
+	lstate[48+g2]=v7;
+	lstate[56+g2]=v8;
 
-	BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
-		state[34], state[42], state[50], state[58]);
+	v1=lstate[1+0+g2];
+	v2=lstate[1+8+g2];
+	v3=lstate[1+16+g2];
+	v4=lstate[1+24+g2];
+	v5=lstate[1+32+g2];
+	v6=lstate[1+40+g2];
+	v7=lstate[1+48+g2];
+	v8=lstate[1+56+g2];
 
-	BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
-		state[35], state[43], state[51], state[59]);
+	BLAKE2_ROUND_NO_MSG_V8(v1, v2, v3, v4, v5, v6, v7, v8);
 
-	BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
-		state[36], state[44], state[52], state[60]);
+	lstate[1+0+g2]=v1;
+	lstate[1+8+g2]=v2;
+	lstate[1+16+g2]=v3;
+	lstate[1+24+g2]=v4;
+	lstate[1+32+g2]=v5;
+	lstate[1+40+g2]=v6;
+	lstate[1+48+g2]=v7;
+	lstate[1+56+g2]=v8;
 
-	BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
-		state[37], state[45], state[53], state[61]);
+	barrier(CLK_LOCAL_MEM_FENCE);
 
-	BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
-		state[38], state[46], state[54], state[62]);
+	for(i=0;i<64;i++)
+	{
+		state[i]=((__local ulong2*)lstate)[i*4+g];
+	}
 
-	BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
-		state[39], state[47], state[55], state[63]);
+	barrier(CLK_LOCAL_MEM_FENCE);
 
 	// BLAKE2 - end
 
