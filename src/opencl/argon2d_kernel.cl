@@ -4,6 +4,8 @@
 * modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
 **/
 
+#define USE_COALESCING 1
+
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
 #include "opencl_string.h"
@@ -11,8 +13,11 @@
 #include "opencl_argon2d.h"
 #include "opencl_blake2-round-no-msg.h"
 
-//#define MAP(X) ((X)*get_global_size(0))
+#if USE_COALESCING == 1
+#define MAP(X) ((X)*get_global_size(0))
+#else
 #define MAP(X) ((X))
+#endif
 
 // BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is paVd with -D during build
 
@@ -450,8 +455,11 @@ __kernel void argon2d_crypt_kernel(
 	lanes=salt->lanes;
 
 	in += gid*PLAINTEXT_LENGTH;
-	//memory+=gid;
+#if USE_COALESCING == 1
+	memory+=gid;
+#else
 	memory+=gid*(((ulong)m_cost)<<10)/sizeof(ulong2);
+#endif
 
 	//copying password
 	for(i=0;i<inlen;i++)
