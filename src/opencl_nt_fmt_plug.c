@@ -365,7 +365,7 @@ static void init_kernel(unsigned int num_ld_hashes, char *bitmap_para)
 	"-D LOC_3=%d"
 #endif
 	,offset_table_size, hash_table_size, shift64_ot_sz, shift64_ht_sz,
-	num_ld_hashes, mask_int_cand.num_int_cand, bitmap_para, is_static_gpu_mask,
+	num_ld_hashes, mask_int_cand.num_int_cand, bitmap_para, mask_gpu_is_static,
 	(unsigned long long)const_cache_size, cp_id2macro(pers_opts.target_enc),
 	pers_opts.internal_cp == UTF_8 ? cp_id2macro(ASCII) :
 	cp_id2macro(pers_opts.internal_cp), PLAINTEXT_LENGTH,
@@ -390,10 +390,9 @@ static void init(struct fmt_main *_self)
 {
 	self = _self;
 	num_loaded_hashes = 0;
-	mask_int_cand_target = 10000;
 
 	opencl_prepare_dev(gpu_id);
-
+	mask_int_cand_target = opencl_speed_index(gpu_id) / 100;
 	if (pers_opts.target_enc == UTF_8) {
 		self->params.plaintext_length = MIN(125, UTF8_MAX_LENGTH);
 		tests[1].plaintext = "\xC3\xBC";	// German u-umlaut in UTF-8
@@ -530,7 +529,7 @@ static void set_key(char *_key, int index)
 	const ARCH_WORD_32 *key = (ARCH_WORD_32*)_key;
 	int len = strlen(_key);
 
-	if (mask_int_cand.num_int_cand > 1 && !is_static_gpu_mask) {
+	if (mask_int_cand.num_int_cand > 1 && !mask_gpu_is_static) {
 		int i;
 		saved_int_key_loc[index] = 0;
 		for (i = 0; i < MASK_FMT_INT_PLHDR; i++) {
@@ -586,7 +585,7 @@ static char *get_key(int index)
 
 	if (mask_skip_ranges && mask_int_cand.num_int_cand > 1) {
 		for (i = 0; i < MASK_FMT_INT_PLHDR && mask_skip_ranges[i] != -1; i++)
-			if (is_static_gpu_mask)
+			if (mask_gpu_is_static)
 				out[static_gpu_locations[i]] =
 				mask_int_cand.int_cand[int_index].x[i];
 			else
@@ -868,7 +867,7 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 
 	BENCH_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], buffer_idx, CL_FALSE, 0, 4 * gws, saved_idx, 0, NULL, multi_profilingEvent[1]), "failed in clEnqueueWriteBuffer buffer_idx.");
 
-	if (!is_static_gpu_mask)
+	if (!mask_gpu_is_static)
 		BENCH_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], buffer_int_key_loc, CL_FALSE, 0, 4 * gws, saved_int_key_loc, 0, NULL, NULL), "failed in clEnqueueWriteBuffer buffer_int_key_loc.");
 
 	if (salt != NULL && salt->count > 4500 &&
@@ -995,6 +994,7 @@ static void reset(struct db_main *db)
 	else {
 		unsigned int *binary, i = 0;
 		char *ciphertext;
+		int tune_time = (options.flags & FLG_MASK_CHK) ? 300 : 50;
 
 		o_lws = local_work_size;
 		o_gws = global_work_size;
@@ -1043,7 +1043,7 @@ static void reset(struct db_main *db)
 		                       2 * BUFSIZE, gws_limit);
 
 		// Auto tune execution from shared/included code.
-		autotune_run_extra(self, 1, gws_limit, 50, CL_TRUE);
+		autotune_run_extra(self, 1, gws_limit, tune_time, CL_TRUE);
 
 		hash_ids[0] = 0;
 
