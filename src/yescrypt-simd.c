@@ -1251,7 +1251,7 @@ yescrypt_kdf_body(const yescrypt_shared_t * shared, yescrypt_local_t * local,
 			if (clen > sizeof(dk))
 				clen = sizeof(dk);
 			_SHA256_Init(&ctx);
-			_SHA256_Update(&ctx, (uint8_t *)sha256, sizeof(sha256));//pomidor: czy jest wersja dla sse osobna?
+			_SHA256_Update(&ctx, (uint8_t *)sha256, sizeof(sha256));
 			_SHA256_Final(dk, &ctx);
 			memcpy(buf, dk, clen);
 		}

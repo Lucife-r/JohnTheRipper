@@ -85,7 +85,7 @@ static char *pKeysGPU;
 static int clobj_allocated;
 static uint saved_gws;
 static cl_kernel bootStrapAndAbsorb_kernel, reducedSqueezeRow0_kernel, reducedDuplexRow_kernel, setupPhaseWanderingGPU_kernel, setupPhaseWanderingGPU_P1_kernel;
-static cl_uint saved_active_gws;
+static cl_uint * saved_active_gws;
 
 static struct fmt_main *self;
 
@@ -620,12 +620,10 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 
 	global_work_size =
 	    local_work_size ? (count + local_work_size -
-	    1) / local_work_size * local_work_size : count;//pomidor wyswietlic czy nParallel ma dobra wartosc
-
-	printf("crypt all %d lws=%u, gws=%u\n",count,*lws,global_work_size);
+	    1) / local_work_size * local_work_size : count;
 
 	real_gws=global_work_size*saved_salt->nParallel;
-	saved_active_gws=real_gws;
+	saved_active_gws[0]=real_gws;
 	real_lws=*lws;
 	//must real_lws%saved_salt->nParallel==0
 	if(real_lws)
@@ -643,13 +641,12 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 			real_gws-=real_gws%real_lws;
 		}
 	}
-	printf("real_gws=%u, real_lws=%u\n",real_gws,real_lws);
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_salt,
 		CL_FALSE, 0, sizeof(struct lyra2_salt), saved_salt, 0, NULL,
 		multi_profilingEvent[0]), "Failed transferring salt");
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id], cl_saved_active_gws,
-		CL_FALSE, 0, sizeof(cl_uint), &saved_active_gws, 0, NULL,
+		CL_FALSE, 0, sizeof(cl_uint), saved_active_gws, 0, NULL,
 		multi_profilingEvent[0]), "Failed transferring active_gws");
 
 	HANDLE_CLERROR(clEnqueueWriteBuffer(queue[gpu_id],
