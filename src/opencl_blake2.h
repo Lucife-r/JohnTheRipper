@@ -102,10 +102,6 @@ typedef struct __blake2bp_state {
 */
 
 //from blake-impl.h
-static inline ulong rotr64(const ulong w, const uint c)
-{
-	return (w >> c) | (w << (64 - c));
-}
 
 __constant ulong blake2b_IV[8] = {
 	0x6a09e667f3bcc908UL, 0xbb67ae8584caa73bUL,
