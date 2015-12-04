@@ -45,7 +45,7 @@ john_register_one(&fmt_argon2ds);
 #elif defined(__AVX__)
 #define ALGORITHM_NAME			"Blake2 AVX"
 #elif defined(__SSSE3__)
-#define ALGORITHM_NAME			"Blake2 SSSE3"
+#define ALGORITHM_NAME			"Blake2 SSSE3"//todo: blake or blamka?
 #elif defined(__SSE2__)
 #define ALGORITHM_NAME			"Blake2 SSE2"
 #else
@@ -78,25 +78,33 @@ john_register_one(&fmt_argon2ds);
 
 static struct fmt_tests tests_i[] = {
 	{"$argon2i$3$1536$1$damage_done$DC62B7B469BDF17DB335062CDCEF7F565700B414D5EBEE2431D86001BC21385E","cathode_ray_sunshine"},
-	{"$argon2i$3$1536$1$damage_done$DC62B7B469BDF17DB335062CDCEF7F565700B414D5EBEE2431D86001BC21385E","cathode_ray_sunshine"},
+	{"$argon2i$3$1536$1$damage_done$CEA354D7561288FA131BD4E955B627ED729FAAD29D3A648D0C660CECB9BC8993","dry_run"},
+	{"$argon2i$3$1536$2$character$CAF9D6C20D16FD3E31A15BD877E1A7E2D5A6773FFE472429B2605E2838A3C07C","out_of_nothing"},
+	{"$argon2i$3$1536$2$character$5D33084B9E65DE8B530C129683608FF8DD62EB4C908EEC622C7F0331A90CF32A","mind_matters"},
 	{NULL}
 };
 
 static struct fmt_tests tests_d[] = {
 	{"$argon2d$3$1536$1$damage_done$248B76AE28BC53BAC90DDCEE5FC5EDF5202ADCA4EEED247422B9884A08F27F07","cathode_ray_sunshine"},
-	{"$argon2d$3$1536$1$damage_done$248B76AE28BC53BAC90DDCEE5FC5EDF5202ADCA4EEED247422B9884A08F27F07","cathode_ray_sunshine"},
+	{"$argon2d$3$1536$1$damage_done$E3346BB4F82CAB940B7076960B5EDA25C05CEB523833BBFCC4AF710C502F1EAE","dry_run"},
+	{"$argon2d$3$1536$2$character$7B81912A94FBC8A89BEDB6115DCDE493588E22B8BA598F8F4F4CEA36AF24E495","out_of_nothing"},
+	{"$argon2d$3$1536$2$character$9F377B08B12C69C777B5F914A3DAB2D241AB324632E49ADF74688BBB886F49B3","mind_matters"},
 	{NULL}
 };
 
 static struct fmt_tests tests_id[] = {
 	{"$argon2id$3$1536$1$damage_done$BCB4FA53A26DED26B15C4E38204548BC7B3069AFB3922A8B564A2AE1061E14BF","cathode_ray_sunshine"},
-	{"$argon2id$3$1536$1$damage_done$BCB4FA53A26DED26B15C4E38204548BC7B3069AFB3922A8B564A2AE1061E14BF","cathode_ray_sunshine"},
+	{"$argon2id$3$1536$1$damage_done$3EA55DE5C5E5909920A9D312B7F8210A2531C5DF7965C031C24ADABB714EBEB3","dry_run"},
+	{"$argon2id$3$1536$2$character$E3A380C483EDA431A8E0010A53FF839F06FBF30A3693E4AC48939AAD7EB014FD","out_of_nothing"},
+	{"$argon2id$3$1536$2$character$3F2B03CC6BD8C9221720C6787706EBA2EFB98A3D22A2F66A56FD861E3486818B","mind_matters"},
 	{NULL}
 };
 
 static struct fmt_tests tests_ds[] = {
 	{"$argon2ds$3$1536$1$damage_done$B8E1B34ECA81A366CA5EC166BB1EC0079106846C3591F1635441016726D27B07","cathode_ray_sunshine"},
-	{"$argon2ds$3$1536$1$damage_done$B8E1B34ECA81A366CA5EC166BB1EC0079106846C3591F1635441016726D27B07","cathode_ray_sunshine"},
+	{"$argon2ds$3$1536$1$damage_done$AB0AF8C9F5ACAA6D2077D4AEB816EF68B1A3C3FF13FA18EBBFF9128884B9E403","dry_run"},
+	{"$argon2ds$3$1536$2$character$44A0849C6D7BFD33A7001CF368155195FCC5A2F73F9A90195467EDEA857960DC","out_of_nothing"},
+	{"$argon2ds$3$1536$2$character$6C8E43855B9C6139F81D6CE95B38C75491CA6E9DD9DC116F31B8197307626C17","mind_matters"},
 	{NULL}
 };
 
@@ -242,13 +250,16 @@ static void reset(struct db_main *db, struct fmt_tests *tests)
 				m_cost = MAX(m_cost, salt->m_cost);
 				if(i==0)
 				{
-					printf("\n");
+					if (options.verbosity > 3)
+					{
+						printf("\n");
+						print_memory(m_cost<<10);
+					}
 					prev_m_cost=m_cost;
-					print_memory(m_cost<<10);
 				}
 			}
 
-			if(prev_m_cost!=m_cost)
+			if(prev_m_cost!=m_cost && options.verbosity > 3)
 			{
 				printf("max ");
 				print_memory(m_cost<<10);
@@ -260,9 +271,11 @@ static void reset(struct db_main *db, struct fmt_tests *tests)
 				m_cost = MAX(m_cost, salt->m_cost);
 				salts = salts->next;
 			}
-
-			printf("\n");
-			print_memory(m_cost<<10);
+			if (options.verbosity > 3)
+			{
+				printf("\n");
+				print_memory(m_cost<<10);
+			}
 		}
 	}
 }
@@ -502,8 +515,6 @@ static void set_salt(void *salt_)
 
 		saved_pseudo_rands_size=pseudo_rands_size;
 	}
-	//printf("%d\n",mem_size);
-	//printf("%d\n",sizeof(uint64_t)*segment_length);
 }
 
 static int cmp_all(void *binary, int count)
@@ -547,7 +558,7 @@ static void argon2i(void *out, size_t outlen, const void *in, size_t inlen,
             (uint8_t*) salt, (uint32_t) saltlen,
             default_ad_ptr, default_ad_length,
             default_secret_ptr, default_secret_length,
-            (uint32_t) t_cost, (uint32_t) m_cost, default_parallelism,default_parallelism,default_a_cbk,default_f_cbk,
+            (uint32_t) t_cost, (uint32_t) m_cost, lanes, default_parallelism,default_a_cbk,default_f_cbk,
 	c_p,c_s,c_m,pr, memory->aligned, Sbox, pseudo_rands};
 	Argon2Core(&context, Argon2_i);
 }
@@ -573,7 +584,7 @@ static void argon2d(void *out, size_t outlen, const void *in, size_t inlen,
             (uint8_t*) salt, (uint32_t) saltlen,
             default_ad_ptr, default_ad_length,
             default_secret_ptr, default_secret_length,
-            (uint32_t) t_cost, (uint32_t) m_cost, default_parallelism,default_parallelism,default_a_cbk,default_f_cbk,
+            (uint32_t) t_cost, (uint32_t) m_cost, lanes, default_parallelism,default_a_cbk,default_f_cbk,
 	c_p,c_s,c_m,pr, memory->aligned, Sbox, pseudo_rands};
 	Argon2Core(&context, Argon2_d);
 }
@@ -599,7 +610,7 @@ static void argon2id(void *out, size_t outlen, const void *in, size_t inlen,
             (uint8_t*) salt, (uint32_t) saltlen,
             default_ad_ptr, default_ad_length,
             default_secret_ptr, default_secret_length,
-            (uint32_t) t_cost, (uint32_t) m_cost, default_parallelism,default_parallelism,default_a_cbk,default_f_cbk,
+            (uint32_t) t_cost, (uint32_t) m_cost, lanes, default_parallelism,default_a_cbk,default_f_cbk,
 	c_p,c_s,c_m,pr, memory->aligned, Sbox, pseudo_rands};
 	Argon2Core(&context, Argon2_id);
 }
@@ -625,7 +636,7 @@ static void argon2ds(void *out, size_t outlen, const void *in, size_t inlen,
             (uint8_t*) salt, (uint32_t) saltlen,
             default_ad_ptr, default_ad_length,
             default_secret_ptr, default_secret_length,
-            (uint32_t) t_cost, (uint32_t) m_cost, default_parallelism,default_parallelism,default_a_cbk,default_f_cbk,
+            (uint32_t) t_cost, (uint32_t) m_cost, lanes, default_parallelism,default_a_cbk,default_f_cbk,
 	c_p,c_s,c_m,pr, memory->aligned, Sbox, pseudo_rands};
 	Argon2Core(&context, Argon2_ds);
 }
