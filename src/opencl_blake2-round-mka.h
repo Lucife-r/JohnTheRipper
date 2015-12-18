@@ -13,9 +13,19 @@
    modified in 2015 by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
 */
 
+ulong2 fBlaMka(ulong2 x, ulong2 y)
+{      
+    ulong2 lessZ = x & (uint64_t) 0x00000000ffffffff;
+    ulong2 lessY = y & (uint64_t) 0x00000000ffffffff ;
+    lessZ = lessZ * lessY;
+    lessZ = lessZ << 1;    
+    
+    return lessZ + x + y;
+}
+
 #define G1_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
-	row1l = row1l + row2l; \
-	row1h = row1h + row2h; \
+	row1l = fBlaMka((row1l), (row2l)); \
+	row1h = fBlaMka((row1h), (row2h)); \
 	\
 	row4l = row4l ^ row1l; \
 	row4h = row4h ^ row1h; \
@@ -23,8 +33,8 @@
 	row4l = rotate(row4l, -32); \
 	row4h = rotate(row4h, -32); \
 	\
-	row3l = row3l + row4l; \
-	row3h = row3h + row4h; \
+	row3l = fBlaMka((row3l), (row4l)); \
+	row3h = fBlaMka((row3h), (row4h)); \
 	\
 	row2l = row2l ^ row3l; \
 	row2h = row2h ^ row3h; \
@@ -33,8 +43,8 @@
 	row2h = rotate(row2h, -24); \
  
 #define G2_V(row1l,row2l,row3l,row4l,row1h,row2h,row3h,row4h) \
-	row1l = row1l + row2l; \
-	row1h = row1h + row2h; \
+	row1l = fBlaMka((row1l), (row2l)); \
+	row1h = fBlaMka((row1h), (row2h)); \
 	\
 	row4l = row4l ^ row1l; \
 	row4h = row4h ^ row1h; \
@@ -42,8 +52,8 @@
 	row4l = rotate(row4l, -16); \
 	row4h = rotate(row4h, -16); \
 	\
-	row3l = row3l + row4l; \
-	row3h = row3h + row4h; \
+	row3l = fBlaMka((row3l), (row4l)); \
+	row3h = fBlaMka((row3h), (row4h)); \
 	\
 	row2l = row2l ^ row3l; \
 	row2h = row2h ^ row3h; \

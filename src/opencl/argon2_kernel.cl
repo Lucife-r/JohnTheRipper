@@ -1,3 +1,15 @@
+/*
+ * Argon2 source code package
+ * 
+ * Written by Daniel Dinu and Dmitry Khovratovich, 2015
+ * 
+ * This work is licensed under a Creative Commons CC0 1.0 License/Waiver.
+ * 
+ * You should have received a copy of the CC0 Public Domain Dedication along with
+ * this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>.
+ * modified by Agnieszka Bielec <bielecagnieszka8 at gmail.com>
+ */
+
 #include "opencl_device_info.h"
 #include "opencl_misc.h"
 #include "opencl_string.h"
@@ -12,7 +24,7 @@
 #include "opencl_endian.h"
 #include "opencl_argon2.h"
 #include "opencl_blake2.h"
-#include "opencl_blake-round-mka.h"
+#include "opencl_blake2-round-mka.h"
 
 struct argon2_salt {
 	uint32_t t_cost;
@@ -24,31 +36,27 @@ struct argon2_salt {
 	char salt[SALT_SIZE];
 };
 
-//functions of Argon2
-
 void InitBlockValue(block* b, uint8_t in){
-    memset(b->v,in,sizeof(b->v));
+    int i;
+    for(i=0;i<ARGON2_WORDS_IN_BLOCK;i++)
+      b->v[i]=0;
 }
 
 void CopyBlock(block* dst, const block* src){
-    memcpy(dst->v,src->v,sizeof(uint64_t)*ARGON2_WORDS_IN_BLOCK);
+    int i;
+    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
+      dst->v[i]=src->v[i];
 }
 
 void CopyBlock_g(__global block* dst, const block* src){
     int i;
-    
-    //memcpy(dst->v,src->v,sizeof(uint64_t)*ARGON2_WORDS_IN_BLOCK);
-    
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)//todo: opt
+    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
       dst->v[i]=src->v[i];
 }
 
 void CopyBlock_pg(block* dst, __global const block* src){
     int i;
-    
-    //memcpy(dst->v,src->v,sizeof(uint64_t)*ARGON2_WORDS_IN_BLOCK);
-    
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)//todo: opt
+    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
       dst->v[i]=src->v[i];
 }
 
@@ -63,7 +71,7 @@ void XORBlock_g(__global block* dst, const  block* src){
     int i; 
     for(i=0; i<ARGON2_WORDS_IN_BLOCK; ++i){
         dst->v[i] ^= src->v[i];
-    }
+    } 
 }
 
 void XORBlock_pg(block* dst, __global const block* src){
@@ -217,63 +225,102 @@ uint32_t IndexAlpha(const Argon2_instance_t* instance, const Argon2_position_t* 
 }
 
 //functions from argon2-ref-core
-void FillBlock(const block* prev_block, const block* ref_block, block* next_block, const uint64_t* Sbox) {
-    block blockR;
-    block block_tmp;
+void FillBlock(ulong2* state, const uint8_t *ref_block, uint8_t *next_block, const uint64_t* Sbox) {
+    
+    ulong2 block_XY[ARGON2_QWORDS_IN_BLOCK];
+    uint32_t i;
     uint64_t x = 0;
-    unsigned i;
+    
+    ulong2 t0,t1;
 
-    CopyBlock(&blockR,ref_block);
-    XORBlock(&blockR,prev_block);
-    CopyBlock(&block_tmp, &blockR);
-
-    if (Sbox != NULL) {
-        x = blockR.v[0] ^ blockR.v[ARGON2_WORDS_IN_BLOCK - 1];
-        for (i = 0; i < 6 * 16; ++i) {
-            uint32_t x1 = x >> 32;
-            uint32_t x2 = x & 0xFFFFFFFF;
-            uint64_t y = Sbox[x1 & ARGON2_SBOX_MASK];
-            uint64_t z = Sbox[(x2 & ARGON2_SBOX_MASK) + ARGON2_SBOX_SIZE / 2];
-            x = (uint64_t) x1 * (uint64_t) x2;
-            x += y;
-            x ^= z;
-        }
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        block_XY[i] = ((ulong2 *) ref_block)[0];
+        ref_block += 16;
     }
-
-
-    // Apply Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
-    for (i = 0; i < 8; ++i) {
-        BLAKE2_ROUND_NOMSG(blockR.v[16 * i], blockR.v[16 * i + 1], blockR.v[16 * i + 2], blockR.v[16 * i + 3],
-                blockR.v[16 * i + 4], blockR.v[16 * i + 5], blockR.v[16 * i + 6], blockR.v[16 * i + 7],
-                blockR.v[16 * i + 8], blockR.v[16 * i + 9], blockR.v[16 * i + 10], blockR.v[16 * i + 11],
-                blockR.v[16 * i + 12], blockR.v[16 * i + 13], blockR.v[16 * i + 14], blockR.v[16 * i + 15]);
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        block_XY[i] = state[i] = state[i] ^ block_XY[i];
     }
-    // Apply Blake2 on rows of 64-bit words: (0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
-    for (i = 0; i < 8; i++) {
-        BLAKE2_ROUND_NOMSG(blockR.v[2 * i], blockR.v[2 * i + 1], blockR.v[2 * i + 16], blockR.v[2 * i + 17],
-                blockR.v[2 * i + 32], blockR.v[2 * i + 33], blockR.v[2 * i + 48], blockR.v[2 * i + 49],
-                blockR.v[2 * i + 64], blockR.v[2 * i + 65], blockR.v[2 * i + 80], blockR.v[2 * i + 81],
-                blockR.v[2 * i + 96], blockR.v[2 * i + 97], blockR.v[2 * i + 112], blockR.v[2 * i + 113]);
-    }
+ 
+    BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
+            state[4], state[5], state[6], state[7]);
 
-    CopyBlock(next_block,&block_tmp);
-    XORBlock(next_block,&blockR);
-    next_block->v[0] += x;
-    next_block->v[ARGON2_WORDS_IN_BLOCK - 1] += x;
+    BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
+            state[12], state[13], state[14], state[15]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
+            state[20], state[21], state[22], state[23]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
+            state[28], state[29], state[30], state[31]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
+            state[36], state[37], state[38], state[39]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
+            state[44], state[45], state[46], state[47]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
+            state[52], state[53], state[54], state[55]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
+            state[60], state[61], state[62], state[63]);
+
+
+    BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
+            state[32], state[40], state[48], state[56]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
+            state[33], state[41], state[49], state[57]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
+            state[34], state[42], state[50], state[58])
+
+    BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
+            state[35], state[43], state[51], state[59]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
+            state[36], state[44], state[52], state[60]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
+            state[37], state[45], state[53], state[61]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
+            state[38], state[46], state[54], state[62]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
+            state[39], state[47], state[55], state[63]);
+
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        // Feedback
+        state[i] = state[i] ^ block_XY[i];
+    }
+        
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        ((ulong2 *) next_block)[0] = state[i] ;
+        next_block += 16;
+    }
 }
 
-void FillBlock_g(__global const block* prev_block, __global const block* ref_block, __global block* next_block, __global const uint64_t* Sbox) {
-    block blockR;
-    block block_tmp;
+void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint8_t *next_block, __global const uint64_t* Sbox) {
+    
+    ulong2 block_XY[ARGON2_QWORDS_IN_BLOCK];
+    uint32_t i;
     uint64_t x = 0;
-    unsigned i;
+    
+    ulong2 t0,t1;
 
-    CopyBlock_pg(&blockR,ref_block);
-    XORBlock_pg(&blockR,prev_block);
-    CopyBlock(&block_tmp, &blockR);
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        block_XY[i] = ((__global ulong2 *) ref_block)[0];
+        ref_block += 16;
+    }
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        block_XY[i] = state[i] = state[i] ^ block_XY[i];
+    }
 
+    
     if (Sbox != NULL) {
-        x = blockR.v[0] ^ blockR.v[ARGON2_WORDS_IN_BLOCK - 1];
+        //x = _mm_extract_epi64(block_XY[0], 0) ^ _mm_extract_epi64(block_XY[ARGON2_QWORDS_IN_BLOCK - 1], 1);
+        x = block_XY[0].x ^ block_XY[ARGON2_QWORDS_IN_BLOCK - 1].y;
         for (i = 0; i < 6 * 16; ++i) {
             uint32_t x1 = x >> 32;
             uint32_t x2 = x & 0xFFFFFFFF;
@@ -286,36 +333,80 @@ void FillBlock_g(__global const block* prev_block, __global const block* ref_blo
     }
     
 
+    BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
+            state[4], state[5], state[6], state[7]);
 
-    // Apply Blake2 on columns of 64-bit words: (0,1,...,15) , then (16,17,..31)... finally (112,113,...127)
-    for (i = 0; i < 8; ++i) {
-        BLAKE2_ROUND_NOMSG(blockR.v[16 * i], blockR.v[16 * i + 1], blockR.v[16 * i + 2], blockR.v[16 * i + 3],
-                blockR.v[16 * i + 4], blockR.v[16 * i + 5], blockR.v[16 * i + 6], blockR.v[16 * i + 7],
-                blockR.v[16 * i + 8], blockR.v[16 * i + 9], blockR.v[16 * i + 10], blockR.v[16 * i + 11],
-                blockR.v[16 * i + 12], blockR.v[16 * i + 13], blockR.v[16 * i + 14], blockR.v[16 * i + 15]);
-    }
-    // Apply Blake2 on rows of 64-bit words: (0,1,16,17,...112,113), then (2,3,18,19,...,114,115).. finally (14,15,30,31,...,126,127)
-    for (i = 0; i < 8; i++) {
-        BLAKE2_ROUND_NOMSG(blockR.v[2 * i], blockR.v[2 * i + 1], blockR.v[2 * i + 16], blockR.v[2 * i + 17],
-                blockR.v[2 * i + 32], blockR.v[2 * i + 33], blockR.v[2 * i + 48], blockR.v[2 * i + 49],
-                blockR.v[2 * i + 64], blockR.v[2 * i + 65], blockR.v[2 * i + 80], blockR.v[2 * i + 81],
-                blockR.v[2 * i + 96], blockR.v[2 * i + 97], blockR.v[2 * i + 112], blockR.v[2 * i + 113]);
-    }
+    BLAKE2_ROUND_NO_MSG_V(state[8], state[9], state[10], state[11],
+            state[12], state[13], state[14], state[15]);
 
+    BLAKE2_ROUND_NO_MSG_V(state[16], state[17], state[18], state[19],
+            state[20], state[21], state[22], state[23]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[24], state[25], state[26], state[27],
+            state[28], state[29], state[30], state[31]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[32], state[33], state[34], state[35],
+            state[36], state[37], state[38], state[39]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[40], state[41], state[42], state[43],
+            state[44], state[45], state[46], state[47]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[48], state[49], state[50], state[51],
+            state[52], state[53], state[54], state[55]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[56], state[57], state[58], state[59],
+            state[60], state[61], state[62], state[63]);
+
+
+    BLAKE2_ROUND_NO_MSG_V(state[0], state[8], state[16], state[24],
+            state[32], state[40], state[48], state[56]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[1], state[9], state[17], state[25],
+            state[33], state[41], state[49], state[57]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[2], state[10], state[18], state[26],
+            state[34], state[42], state[50], state[58])
+
+    BLAKE2_ROUND_NO_MSG_V(state[3], state[11], state[19], state[27],
+            state[35], state[43], state[51], state[59]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[4], state[12], state[20], state[28],
+            state[36], state[44], state[52], state[60]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[5], state[13], state[21], state[29],
+            state[37], state[45], state[53], state[61]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[6], state[14], state[22], state[30],
+            state[38], state[46], state[54], state[62]);
+
+    BLAKE2_ROUND_NO_MSG_V(state[7], state[15], state[23], state[31],
+            state[39], state[47], state[55], state[63]);
+
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        // Feedback
+        state[i] = state[i] ^ block_XY[i];
+    }
     
-    CopyBlock_g(next_block,&block_tmp);
-    XORBlock_g(next_block,&blockR);
-    next_block->v[0] += x;
-    next_block->v[ARGON2_WORDS_IN_BLOCK - 1] += x;
+    if (Sbox != NULL)
+    {
+      state[0].x+=x;
+      state[ARGON2_QWORDS_IN_BLOCK - 1].y+=x;
+    }
+    
+    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
+        ((__global ulong2 *) next_block)[0] = state[i];
+        next_block += 16;
+    }
 }
 
 void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_t* position, __global uint64_t* pseudo_rands) {
-    block zero_block, input_block, address_block;
+    block zero_block, address_block,input_block;
     uint32_t i;
-
+    
     InitBlockValue(&zero_block,0);
-    InitBlockValue(&input_block,0);
-    InitBlockValue(&address_block,0);
+    CopyBlock(&address_block,&zero_block);
+    CopyBlock(&input_block,&zero_block);
+    
     if (instance != NULL && position != NULL) {
         input_block.v[0] = position->pass;
         input_block.v[1] = position->lane;
@@ -326,103 +417,110 @@ void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_
 
         for (i = 0; i < instance->segment_length; ++i) {
             if (i % ARGON2_ADDRESSES_IN_BLOCK == 0) {
+                block zero_block, zero2_block;
                 input_block.v[6]++;
-                FillBlock(&zero_block, &input_block, &address_block, NULL);
-                FillBlock(&zero_block, &address_block, &address_block, NULL);
+                InitBlockValue(&zero_block,0);
+                InitBlockValue(&zero2_block,0);
+                FillBlock((ulong2 *) & zero_block.v, (uint8_t *) & input_block.v, (uint8_t *) & address_block.v, NULL);
+                FillBlock((ulong2 *) & zero2_block.v, (uint8_t *) & address_block.v, (uint8_t *) & address_block.v, NULL);
             }
             pseudo_rands[i] = address_block.v[i % ARGON2_ADDRESSES_IN_BLOCK];
         }
     }
 }
 
-void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) {
-    uint64_t pseudo_rand, ref_index, ref_lane;
-    uint32_t prev_offset, curr_offset;
-    bool data_independent_addressing = (instance->type == Argon2_i) || (instance->type == Argon2_id && (position.pass == 0) && (position.slice < ARGON2_SYNC_POINTS / 2));
-    uint32_t starting_index = 0;
-    __global uint64_t *pseudo_rands;
-    uint32_t i;
 
+void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) {
+   uint64_t pseudo_rand, ref_index, ref_lane;
+   uint32_t prev_offset, curr_offset;
+   ulong2 state[64];
+   __global uint64_t *pseudo_rands;
+   uint32_t starting_index;
+   uint32_t i;
+   bool data_independent_addressing = (instance->type == Argon2_i) || (instance->type == Argon2_id && (position.pass == 0) && (position.slice < ARGON2_SYNC_POINTS / 2));
+   
+   if (instance == NULL){
+       return;
+   }    
+    
+   // Pseudo-random values that determine the reference block position
+   pseudo_rands = instance->pseudo_rands;
+   
+   /*if (pseudo_rands == NULL) {
+       return;
+   }*/
+   
+   if (data_independent_addressing) {
+       GenerateAddresses(instance, &position, pseudo_rands);
+   }
+
+   starting_index = 0;
+   if ((0 == position.pass) && (0 == position.slice)) {
+       starting_index = 2; // we have already generated the first two blocks
+   }
+
+   // Offset of the current block
+   curr_offset = position.lane * instance->lane_length + position.slice * instance->segment_length + starting_index;
+   if (0 == curr_offset % instance->lane_length) {
+       // Last block in this lane
+       prev_offset = curr_offset + instance->lane_length - 1;
+   } else {
+       // Previous block
+       prev_offset = curr_offset - 1;
+   }  
+   memcpy_pg(state, (__global uint8_t *) ((instance->memory + prev_offset)->v), ARGON2_BLOCK_SIZE);
+   for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
+       __global block *ref_block, *curr_block;
+       /*1.1 Rotating prev_offset if needed */
+       if (curr_offset % instance->lane_length == 1) {
+           prev_offset = curr_offset - 1;
+       }
+
+       /* 1.2 Computing the index of the reference block */
+       /* 1.2.1 Taking pseudo-random value from the previous block */
+       if (data_independent_addressing) {
+           pseudo_rand = pseudo_rands[i];
+       } else {
+           pseudo_rand = instance->memory[prev_offset].v[0];
+       }
+
+       /* 1.2.2 Computing the lane of the reference block */
+       ref_lane = ((pseudo_rand >> 32)) % instance->lanes;
+       if ((position.pass == 0) && (position.slice == 0)) {
+           // Can not reference other lanes yet
+           ref_lane = position.lane;
+       }
+
+       /* 1.2.3 Computing the number of possible reference block within the lane. */
+       position.index = i;
+       ref_index = IndexAlpha(instance, &position, pseudo_rand & 0xFFFFFFFF, ref_lane == position.lane);
+
+       /* 2 Creating a new block */
+       ref_block = instance->memory + instance->lane_length * ref_lane + ref_index;
+       curr_block = instance->memory + curr_offset;
+       FillBlock_g(state, (__global uint8_t *) ref_block->v, (__global uint8_t *) curr_block->v, instance->Sbox);
+   }   
+}
+
+void GenerateSbox(Argon2_instance_t* instance) {
+    uint32_t i;
+    block zero_block, out_block, start_block;
     if (instance == NULL) {
         return;
     }
-    // Pseudo-random values that determine the reference block position
-    pseudo_rands = instance->pseudo_rands;
-    
-    /*if (pseudo_rands == NULL){
-        return;
-    }*/
-         
-    if (data_independent_addressing) {
-        //argon2_id, argon2_i
-        GenerateAddresses(instance, &position, pseudo_rands);//pseudo_rands is used only for argon2 with independent addressing
-    }
-
-    if ((0 == position.pass) && (0 == position.slice)) {
-        starting_index = 2; // we have already generated the first two blocks
-    }
-
-    // Offset of the current block
-    curr_offset = position.lane * instance->lane_length + position.slice * instance->segment_length + starting_index;
-    if (0 == curr_offset % instance->lane_length) {
-        // Last block in this lane
-        prev_offset = curr_offset + instance->lane_length - 1;
-    } else {
-        // Previous block
-        prev_offset = curr_offset - 1;
-    }
-
-    for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
-        /*1.1 Rotating prev_offset if needed */
-        if (curr_offset % instance->lane_length == 1) {
-            prev_offset = curr_offset - 1;
-        }
-
-        /* 1.2 Computing the index of the reference block */
-        /* 1.2.1 Taking pseudo-random value from the previous block */
-        if (data_independent_addressing) {
-            pseudo_rand = pseudo_rands[i];
-        } 
-        else {
-            pseudo_rand = instance->memory[prev_offset].v[0];
-        }
-
-        /* 1.2.2 Computing the lane of the reference block */
-        ref_lane = ((pseudo_rand >> 32)) % instance->lanes;
-        if ((position.pass == 0) && (position.slice == 0)) {
-            // Can not reference other lanes yet
-            ref_lane = position.lane;
-        }
-
-        /* 1.2.3 Computing the number of possible reference block within the lane. */
-        position.index = i;
-        ref_index = IndexAlpha(instance, &position, pseudo_rand & 0xFFFFFFFF, ref_lane == position.lane);
-
-        /* 2 Creating a new block */
-        FillBlock_g(instance->memory + prev_offset, instance->memory + instance->lane_length * ref_lane + ref_index, instance->memory + curr_offset, instance->Sbox);
-    }
-}
-    
-
-void GenerateSbox(Argon2_instance_t* instance) {
-    block zero_block, out_block;
-    block start_block =instance->memory[0];
-    uint32_t i;
-
-    if (instance == NULL){
-        return;
-    }
     InitBlockValue(&zero_block,0);
-    out_block  = zero_block;
-
+    out_block = zero_block;
+    start_block = instance->memory[0];
+    
     for (i = 0; i < ARGON2_SBOX_SIZE / ARGON2_WORDS_IN_BLOCK; ++i) {
-        FillBlock(&zero_block, &start_block, &out_block, NULL);
-        FillBlock(&zero_block, &out_block, &start_block, NULL);
-        memcpy_g(instance->Sbox + i*ARGON2_WORDS_IN_BLOCK, start_block.v, ARGON2_BLOCK_SIZE);
+        block zero_block, zero2_block;
+        InitBlockValue(&zero_block,0);
+        InitBlockValue(&zero2_block,0);
+        FillBlock((ulong2*) zero_block.v, (uint8_t*) start_block.v, (uint8_t*) out_block.v, NULL);
+        FillBlock((ulong2*) zero2_block.v, (uint8_t*) out_block.v, (uint8_t*) start_block.v, NULL);
+        memcpy_g(instance->Sbox + i * ARGON2_WORDS_IN_BLOCK, start_block.v, ARGON2_BLOCK_SIZE);
     }
 }
-
-//end of functions from argon2-ref-core
 
 void Finalize(const Argon2_Context *context, Argon2_instance_t* instance) {
     if (context != NULL && instance != NULL) {
@@ -462,8 +560,6 @@ void FillMemoryBlocks(Argon2_instance_t* instance) {
             }
         }
     }
-
-    
 }
 
 int ValidateInputs(const Argon2_Context* context) {
