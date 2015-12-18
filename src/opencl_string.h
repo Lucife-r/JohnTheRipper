@@ -25,6 +25,15 @@ static void memcpy(void *dst, const void *src, uint size)
 		d[i]=s[i];
 }
 
+static void memcpy_pg(void *dst, __global const void *src, uint size)
+{
+	uint i;
+	uchar *d=(uchar*)dst;
+	__global uchar *s=(__global uchar*)src;
+	for(i=0; i<size; i++)
+		d[i]=s[i];
+}
+
 static void memcpy_g(__global void *dst, const void *src, uint size)
 {
 	uint i;
