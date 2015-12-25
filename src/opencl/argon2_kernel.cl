@@ -14,8 +14,16 @@
 #include "opencl_misc.h"
 #include "opencl_string.h"
 
-//#define MAP(X) ((X)*get_global_size(0))
-//#define MAP(X) ((X))
+#define COALESCING 1
+#define V ulong8
+#define Vsiz 8  //how many times V is bigger than V, this value must be changed if V is changed
+
+//coalescing
+#if COALESCING == 1
+#define MAP(X) ((X)*get_global_size(0))
+#else
+#define MAP(X) ((X))
+#endif
 
 // BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is passed with -D during build
 
@@ -54,10 +62,26 @@ void CopyBlock_g(__global block* dst, const block* src){
       dst->v[i]=src->v[i];
 }
 
+void CopyBlock_g_map(__global V* dst, const V* src){
+    int i,j;
+    
+    //memcpy(dst->v,src->v,sizeof(uint64_t)*ARGON2_WORDS_IN_BLOCK);
+    
+    for(i=0,j=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++,j+=MAP(1))//todo: opt
+      dst[j]=src[i];
+}
+
 void CopyBlock_pg(block* dst, __global const block* src){
     int i;
     for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
       dst->v[i]=src->v[i];
+}
+
+
+void CopyBlock_pgc(V * dst, __global const V* src){
+    int i;
+    for(i=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++)
+      dst[i]=src[MAP(i)];
 }
 
 void XORBlock(block* dst, const  block* src){
@@ -81,6 +105,12 @@ void XORBlock_pg(block* dst, __global const block* src){
     }
 }
 
+void XORBlock_pgc(V* dst, __global const V* src){
+    int i; 
+    for(i=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; ++i){
+        dst[i] ^= src[MAP(i)];
+    }
+}
 /*************************Argon2 internal constants**************************************************/
 
 /* Version of the algorithm */
@@ -136,43 +166,6 @@ static int blake2b_long(uchar *out, const void *in, const uint outlen, const ulo
 	return 0;
 }
 
-static int blake2b_long_g(__global uchar *out, const void *in, const uint outlen, const ulong inlen)
-{
-	uint toproduce;
-	blake2b_state blake_state;
-	if (outlen <= BLAKE2B_OUTBYTES)
-	{
-		blake2b_init(&blake_state, outlen);
-		blake2b_update(&blake_state, (const uchar*)&outlen, sizeof(uint));
-		blake2b_update(&blake_state, (const uchar *)in, inlen);
-		blake2b_final_g(&blake_state, out, outlen);
-	}
-	else
-	{
-		uchar out_buffer[BLAKE2B_OUTBYTES];
-		uchar in_buffer[BLAKE2B_OUTBYTES];
-		blake2b_init(&blake_state, BLAKE2B_OUTBYTES);
-		blake2b_update(&blake_state, (const uchar*)&outlen, sizeof(uint));
-		blake2b_update(&blake_state, (const uchar *)in, inlen);
-		blake2b_final(&blake_state, out_buffer, BLAKE2B_OUTBYTES);
-		memcpy_g(out, out_buffer, BLAKE2B_OUTBYTES / 2);
-		out += BLAKE2B_OUTBYTES / 2;
-		toproduce = outlen - BLAKE2B_OUTBYTES / 2;
-		while (toproduce > BLAKE2B_OUTBYTES)
-		{
-			memcpy(in_buffer, out_buffer, BLAKE2B_OUTBYTES);
-			blake2b(out_buffer, in_buffer, 0, BLAKE2B_OUTBYTES, BLAKE2B_OUTBYTES, 0);
-			memcpy_g(out, out_buffer, BLAKE2B_OUTBYTES / 2);
-			out += BLAKE2B_OUTBYTES / 2;
-			toproduce -= BLAKE2B_OUTBYTES / 2;
-		}
-		memcpy(in_buffer, out_buffer, BLAKE2B_OUTBYTES);
-		blake2b(out_buffer, in_buffer, 0, toproduce, BLAKE2B_OUTBYTES, 0);
-		memcpy_g(out, out_buffer, toproduce);
-
-	}
-	return 0;
-}
 
 uint32_t IndexAlpha(const Argon2_instance_t* instance, const Argon2_position_t* position, uint32_t pseudo_rand, bool same_lane) {
     /*
@@ -309,9 +302,9 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
     
     ulong2 t0,t1;
 
-    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
-        block_XY[i] = ((__global ulong2 *) ref_block)[0];
-        ref_block += 16;
+    for (i = 0; i < ARGON2_WORDS_IN_BLOCK/Vsiz; i++) {
+        ((V *)block_XY)[i] = ((__global V *) ref_block)[0];
+        ref_block += MAP(sizeof(V));
     }
     for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
         block_XY[i] = state[i] = state[i] ^ block_XY[i];
@@ -393,9 +386,9 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
       state[ARGON2_QWORDS_IN_BLOCK - 1].y+=x;
     }
     
-    for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
-        ((__global ulong2 *) next_block)[0] = state[i];
-        next_block += 16;
+    for (i = 0; i < ARGON2_WORDS_IN_BLOCK/Vsiz; i++) {
+        ((__global V *) next_block)[0] = ((V *)state)[i];
+        next_block += MAP(sizeof(V));
     }
 }
 
@@ -468,20 +461,25 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        // Previous block
        prev_offset = curr_offset - 1;
    }  
-   memcpy_pg(state, (__global uint8_t *) ((instance->memory + prev_offset)->v), ARGON2_BLOCK_SIZE);
+   CopyBlock_pgc(state, (__global uint8_t *) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
    for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
-       __global block *ref_block, *curr_block;
+       __global V *ref_block, *curr_block;
        /*1.1 Rotating prev_offset if needed */
        if (curr_offset % instance->lane_length == 1) {
            prev_offset = curr_offset - 1;
        }
+       
 
        /* 1.2 Computing the index of the reference block */
        /* 1.2.1 Taking pseudo-random value from the previous block */
        if (data_independent_addressing) {
            pseudo_rand = pseudo_rands[i];
        } else {
-           pseudo_rand = instance->memory[prev_offset].v[0];
+	   #if Vsiz > 1
+	   pseudo_rand = (instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))]).x;
+	   #else
+	   pseudo_rand = instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))];
+	   #endif
        }
 
        /* 1.2.2 Computing the lane of the reference block */
@@ -496,9 +494,9 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        ref_index = IndexAlpha(instance, &position, pseudo_rand & 0xFFFFFFFF, ref_lane == position.lane);
 
        /* 2 Creating a new block */
-       ref_block = instance->memory + instance->lane_length * ref_lane + ref_index;
-       curr_block = instance->memory + curr_offset;
-       FillBlock_g(state, (__global uint8_t *) ref_block->v, (__global uint8_t *) curr_block->v, instance->Sbox);
+       ref_block = instance->memory + MAP((instance->lane_length * ref_lane + ref_index)*(ARGON2_WORDS_IN_BLOCK/Vsiz));
+       curr_block = instance->memory + MAP(curr_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz));
+       FillBlock_g(state, (__global V *) ref_block, (__global V *) curr_block, instance->Sbox);
    }   
 }
 
@@ -510,7 +508,8 @@ void GenerateSbox(Argon2_instance_t* instance) {
     }
     InitBlockValue(&zero_block,0);
     out_block = zero_block;
-    start_block = instance->memory[0];
+    //start_block = instance->memory[0];
+    CopyBlock_pgc(&start_block,instance->memory);
     
     for (i = 0; i < ARGON2_SBOX_SIZE / ARGON2_WORDS_IN_BLOCK; ++i) {
         block zero_block, zero2_block;
@@ -526,12 +525,12 @@ void Finalize(const Argon2_Context *context, Argon2_instance_t* instance) {
     if (context != NULL && instance != NULL) {
         uint32_t l;
         block blockhash;
-        CopyBlock_pg(&blockhash, instance->memory+ instance->lane_length - 1);
+        CopyBlock_pgc(&blockhash, instance->memory+ MAP((instance->lane_length - 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         // XOR the last blocks
         for (l = 1; l < instance->lanes; ++l) {
             uint32_t last_block_in_lane = l * instance->lane_length + (instance->lane_length - 1);
-            XORBlock_pg(&blockhash,instance->memory + last_block_in_lane);
+            XORBlock_pgc(&blockhash,instance->memory + MAP(last_block_in_lane*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         }
 
@@ -673,13 +672,18 @@ int ValidateInputs(const Argon2_Context* context) {
 void FillFirstBlocks(uint8_t* blockhash, const Argon2_instance_t* instance) {
     // Make the first and second block in each lane as G(H0||i||0) or G(H0||i||1)
     uint32_t l;
+    block tmp;
+    
     for (l = 0; l < instance->lanes; ++l) {
         store32(blockhash+ARGON2_PREHASH_DIGEST_LENGTH,0);
         store32(blockhash+ARGON2_PREHASH_DIGEST_LENGTH + 4,l);
-        blake2b_long_g((__global uint8_t*) (instance->memory[l * instance->lane_length].v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
-
+	
+	blake2b_long((uint8_t*) (tmp.v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
+	CopyBlock_g_map(instance->memory+MAP((l * instance->lane_length)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),&tmp);
         store32(blockhash+ARGON2_PREHASH_DIGEST_LENGTH,1);
-        blake2b_long_g((__global uint8_t*) (instance->memory[l * instance->lane_length + 1].v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
+	
+	blake2b_long((uint8_t*) (tmp.v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
+	CopyBlock_g_map(instance->memory+MAP((l * instance->lane_length + 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),&tmp);
     }
 }
 
@@ -809,7 +813,7 @@ __kernel void argon2_crypt_kernel(
     __global const uint * lengths,
     __global uchar *out,
     __global struct argon2_salt *salt,
-    __global ulong *memory,
+    __global V *memory,
     __global ulong *pseudo_rands,
     __global ulong *Sbox
 )
@@ -853,8 +857,14 @@ __kernel void argon2_crypt_kernel(
 	mem_size= sizeof(block)*memory_blocks;
 	pseudo_rands_size=sizeof(uint64_t)*segment_length;
 				
-				
-	memory+=mem_size/sizeof(ulong)*gid;
+	
+
+#if COALESCING == 1
+	memory+=gid;
+#else
+	memory+=mem_size/sizeof(V)*gid;
+#endif
+	
 	pseudo_rands+=pseudo_rands_size/sizeof(ulong)*gid;
 	if(salt->type==Argon2_ds)
 	   Sbox+=(sizeof(ulong)*ARGON2_SBOX_SIZE)/sizeof(ulong)*gid;

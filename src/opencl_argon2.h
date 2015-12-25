@@ -42,7 +42,7 @@ typedef struct _block {
  * Used to evaluate the number and location of blocks to construct in each thread
  */
 typedef struct _Argon2_instance_t {
-    __global block* memory; //Memory pointer
+    __global V * memory; //Memory pointer
     uint32_t passes; //Number of passes
     uint32_t memory_blocks; //Number of blocks in memory
     uint32_t segment_length;
