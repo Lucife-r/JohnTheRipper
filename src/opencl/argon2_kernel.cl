@@ -25,7 +25,7 @@
 #define MAP(X) ((X))
 #endif
 
-// BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is passed with -D during build
+// BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH is passed with -D during build  
 
 #define ARCH_LITTLE_ENDIAN	1
 
@@ -56,56 +56,19 @@ void CopyBlock(block* dst, const block* src){
       dst->v[i]=src->v[i];
 }
 
-void CopyBlock_g(__global block* dst, const block* src){
-    int i;
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
-      dst->v[i]=src->v[i];
-}
-
 void CopyBlock_g_map(__global V* dst, const V* src){
-    int i,j;
-    
-    //memcpy(dst->v,src->v,sizeof(uint64_t)*ARGON2_WORDS_IN_BLOCK);
-    
+    int i,j;    
     for(i=0,j=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++,j+=MAP(1))//todo: opt
       dst[j]=src[i];
 }
 
-void CopyBlock_pg(block* dst, __global const block* src){
-    int i;
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
-      dst->v[i]=src->v[i];
-}
-
-
-void CopyBlock_pgc(V * dst, __global const V* src){
+void CopyBlock_pg_map(V * dst, __global const V* src){
     int i;
     for(i=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++)
       dst[i]=src[MAP(i)];
 }
 
-void XORBlock(block* dst, const  block* src){
-    int i; 
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; ++i){
-        dst->v[i] ^= src->v[i];
-    }
-}
-
-void XORBlock_g(__global block* dst, const  block* src){
-    int i; 
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; ++i){
-        dst->v[i] ^= src->v[i];
-    } 
-}
-
-void XORBlock_pg(block* dst, __global const block* src){
-    int i; 
-    for(i=0; i<ARGON2_WORDS_IN_BLOCK; ++i){
-        dst->v[i] ^= src->v[i];
-    }
-}
-
-void XORBlock_pgc(V* dst, __global const V* src){
+void XORBlock_pg_map(V* dst, __global const V* src){
     int i; 
     for(i=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; ++i){
         dst[i] ^= src[MAP(i)];
@@ -217,7 +180,6 @@ uint32_t IndexAlpha(const Argon2_instance_t* instance, const Argon2_position_t* 
     return absolute_position;
 }
 
-//functions from argon2-ref-core
 void FillBlock(ulong2* state, const uint8_t *ref_block, uint8_t *next_block, const uint64_t* Sbox) {
     
     ulong2 block_XY[ARGON2_QWORDS_IN_BLOCK];
@@ -233,6 +195,7 @@ void FillBlock(ulong2* state, const uint8_t *ref_block, uint8_t *next_block, con
     for (i = 0; i < ARGON2_QWORDS_IN_BLOCK; i++) {
         block_XY[i] = state[i] = state[i] ^ block_XY[i];
     }
+    
  
     BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
             state[4], state[5], state[6], state[7]);
@@ -310,8 +273,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
         block_XY[i] = state[i] = state[i] ^ block_XY[i];
     }
 
-    
-    if (Sbox != NULL) {
+#ifdef DS
         //x = _mm_extract_epi64(block_XY[0], 0) ^ _mm_extract_epi64(block_XY[ARGON2_QWORDS_IN_BLOCK - 1], 1);
         x = block_XY[0].x ^ block_XY[ARGON2_QWORDS_IN_BLOCK - 1].y;
         for (i = 0; i < 6 * 16; ++i) {
@@ -323,7 +285,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
             x += y;
             x ^= z;
         }
-    }
+#endif
     
 
     BLAKE2_ROUND_NO_MSG_V(state[0], state[1], state[2], state[3],
@@ -380,11 +342,10 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
         state[i] = state[i] ^ block_XY[i];
     }
     
-    if (Sbox != NULL)
-    {
+#ifdef DS
       state[0].x+=x;
       state[ARGON2_QWORDS_IN_BLOCK - 1].y+=x;
-    }
+#endif
     
     for (i = 0; i < ARGON2_WORDS_IN_BLOCK/Vsiz; i++) {
         ((__global V *) next_block)[0] = ((V *)state)[i];
@@ -392,6 +353,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
     }
 }
 
+#ifdef I
 void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_t* position, __global uint64_t* pseudo_rands) {
     block zero_block, address_block,input_block;
     uint32_t i;
@@ -421,6 +383,7 @@ void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_
         }
     }
 }
+#endif
 
 
 void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) {
@@ -443,9 +406,10 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        return;
    }*/
    
-   if (data_independent_addressing) {
-       GenerateAddresses(instance, &position, pseudo_rands);
-   }
+   
+#ifdef I
+   GenerateAddresses(instance, &position, pseudo_rands);
+#endif
 
    starting_index = 0;
    if ((0 == position.pass) && (0 == position.slice)) {
@@ -461,7 +425,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        // Previous block
        prev_offset = curr_offset - 1;
    }  
-   CopyBlock_pgc(state, (__global uint8_t *) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
+   CopyBlock_pg_map(state, (__global uint8_t *) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
    for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
        __global V *ref_block, *curr_block;
        /*1.1 Rotating prev_offset if needed */
@@ -509,7 +473,7 @@ void GenerateSbox(Argon2_instance_t* instance) {
     InitBlockValue(&zero_block,0);
     out_block = zero_block;
     //start_block = instance->memory[0];
-    CopyBlock_pgc(&start_block,instance->memory);
+    CopyBlock_pg_map(&start_block,instance->memory);
     
     for (i = 0; i < ARGON2_SBOX_SIZE / ARGON2_WORDS_IN_BLOCK; ++i) {
         block zero_block, zero2_block;
@@ -525,12 +489,12 @@ void Finalize(const Argon2_Context *context, Argon2_instance_t* instance) {
     if (context != NULL && instance != NULL) {
         uint32_t l;
         block blockhash;
-        CopyBlock_pgc(&blockhash, instance->memory+ MAP((instance->lane_length - 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
+        CopyBlock_pg_map(&blockhash, instance->memory+ MAP((instance->lane_length - 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         // XOR the last blocks
         for (l = 1; l < instance->lanes; ++l) {
             uint32_t last_block_in_lane = l * instance->lane_length + (instance->lane_length - 1);
-            XORBlock_pgc(&blockhash,instance->memory + MAP(last_block_in_lane*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
+            XORBlock_pg_map(&blockhash,instance->memory + MAP(last_block_in_lane*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         }
 

@@ -257,9 +257,16 @@ static void reset_(uint64_t mem_size, uint64_t pseudo_rands)
 	
 	MEM_SIZE=mem_size;
 	PSEUDO_RANDS_SIZE=pseudo_rands;
-
-	sprintf(build_opts,
-	    "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH);
+	
+	if(I)
+	   sprintf(build_opts,
+	      "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d -DI", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH);
+	else if(DS)
+	   sprintf(build_opts,
+	      "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d -DDS", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH);
+	else  
+	   sprintf(build_opts,
+	      "-DBINARY_SIZE=%d -DSALT_SIZE=%d -DPLAINTEXT_LENGTH=%d", BINARY_SIZE, SALT_SIZE, PLAINTEXT_LENGTH);
 
 	opencl_init("$JOHN/kernels/argon2_kernel.cl", gpu_id, build_opts);
 
@@ -272,7 +279,9 @@ static void reset_(uint64_t mem_size, uint64_t pseudo_rands)
 
 	release_clobj();
 	
-	size=MEM_SIZE+PSEUDO_RANDS_SIZE;
+	size=MEM_SIZE;
+	if(I)
+	  size+=PSEUDO_RANDS_SIZE;
 	if(DS)
 	  size+=sizeof(uint64_t)*ARGON2_SBOX_SIZE;
 
