@@ -34,6 +34,8 @@
 #include "opencl_blake2.h"
 #include "opencl_blake2-round-mka.h"
 
+#define NULL 0
+
 struct argon2_salt {
 	uint32_t t_cost;
 	uint32_t m_cost;
@@ -50,14 +52,16 @@ void InitBlockValue(block* b, uint8_t in){
       b->v[i]=0;
 }
 
-void CopyBlock(block* dst, const block* src){
+void CopyBlock(void *dst_, const void* src_){
     int i;
+    ulong *dst=(ulong *) dst_;
+    ulong *src=(ulong *) src_;
     for(i=0; i<ARGON2_WORDS_IN_BLOCK; i++)
-      dst->v[i]=src->v[i];
+      dst[i]=src[i];
 }
 
 void CopyBlock_g_map(__global V* dst, const V* src){
-    int i,j;    
+    int i,j;
     for(i=0,j=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++,j+=MAP(1))//todo: opt
       dst[j]=src[i];
 }
@@ -184,7 +188,6 @@ void FillBlock(ulong2* state, const uint8_t *ref_block, uint8_t *next_block, con
     
     ulong2 block_XY[ARGON2_QWORDS_IN_BLOCK];
     uint32_t i;
-    uint64_t x = 0;
     
     ulong2 t0,t1;
 
@@ -258,12 +261,14 @@ void FillBlock(ulong2* state, const uint8_t *ref_block, uint8_t *next_block, con
 }
 
 void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint8_t *next_block, __global const uint64_t* Sbox) {
-    
     ulong2 block_XY[ARGON2_QWORDS_IN_BLOCK];
     uint32_t i;
-    uint64_t x = 0;
     
     ulong2 t0,t1;
+    
+#ifdef DS
+    uint64_t x = 0;
+#endif
 
     for (i = 0; i < ARGON2_WORDS_IN_BLOCK/Vsiz; i++) {
         ((V *)block_XY)[i] = ((__global V *) ref_block)[0];
@@ -275,7 +280,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
 
 #ifdef DS
         //x = _mm_extract_epi64(block_XY[0], 0) ^ _mm_extract_epi64(block_XY[ARGON2_QWORDS_IN_BLOCK - 1], 1);
-        x = block_XY[0].x ^ block_XY[ARGON2_QWORDS_IN_BLOCK - 1].y;
+        x = block_XY[0].s0 ^ block_XY[ARGON2_QWORDS_IN_BLOCK - 1].s1;
         for (i = 0; i < 6 * 16; ++i) {
             uint32_t x1 = x >> 32;
             uint32_t x2 = x & 0xFFFFFFFF;
@@ -425,7 +430,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        // Previous block
        prev_offset = curr_offset - 1;
    }  
-   CopyBlock_pg_map(state, (__global uint8_t *) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
+   CopyBlock_pg_map((V*) state, (__global V*) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
    for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
        __global V *ref_block, *curr_block;
        /*1.1 Rotating prev_offset if needed */
@@ -440,7 +445,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
            pseudo_rand = pseudo_rands[i];
        } else {
 	   #if Vsiz > 1
-	   pseudo_rand = (instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))]).x;
+	   pseudo_rand = (instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))]).s0;
 	   #else
 	   pseudo_rand = instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))];
 	   #endif
@@ -460,7 +465,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        /* 2 Creating a new block */
        ref_block = instance->memory + MAP((instance->lane_length * ref_lane + ref_index)*(ARGON2_WORDS_IN_BLOCK/Vsiz));
        curr_block = instance->memory + MAP(curr_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz));
-       FillBlock_g(state, (__global V *) ref_block, (__global V *) curr_block, instance->Sbox);
+       FillBlock_g((ulong2 *)state, (__global uint8_t *) ref_block, (__global uint8_t *) curr_block, instance->Sbox);
    }   
 }
 
@@ -473,7 +478,7 @@ void GenerateSbox(Argon2_instance_t* instance) {
     InitBlockValue(&zero_block,0);
     out_block = zero_block;
     //start_block = instance->memory[0];
-    CopyBlock_pg_map(&start_block,instance->memory);
+    CopyBlock_pg_map((V*) &start_block, (__global V*) instance->memory);
     
     for (i = 0; i < ARGON2_SBOX_SIZE / ARGON2_WORDS_IN_BLOCK; ++i) {
         block zero_block, zero2_block;
@@ -489,12 +494,12 @@ void Finalize(const Argon2_Context *context, Argon2_instance_t* instance) {
     if (context != NULL && instance != NULL) {
         uint32_t l;
         block blockhash;
-        CopyBlock_pg_map(&blockhash, instance->memory+ MAP((instance->lane_length - 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
+        CopyBlock_pg_map((V*) &blockhash, (__global V*) instance->memory+ MAP((instance->lane_length - 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         // XOR the last blocks
         for (l = 1; l < instance->lanes; ++l) {
             uint32_t last_block_in_lane = l * instance->lane_length + (instance->lane_length - 1);
-            XORBlock_pg_map(&blockhash,instance->memory + MAP(last_block_in_lane*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
+            XORBlock_pg_map((V*) &blockhash,(__global V*) instance->memory + MAP(last_block_in_lane*(ARGON2_WORDS_IN_BLOCK/Vsiz)));
 
         }
 
@@ -576,9 +581,12 @@ int ValidateInputs(const Argon2_Context* context) {
             return ARGON2_SECRET_PTR_MISMATCH;
         }
     } else {
+        //warning: pointless comparison of unsigned integer with zero
+        /*
         if (ARGON2_MIN_SECRET > context->secretlen) {
             return ARGON2_SECRET_TOO_SHORT;
         }
+        */
         if (ARGON2_MAX_SECRET < context->secretlen) {
             return ARGON2_SECRET_TOO_LONG;
         }
@@ -590,12 +598,14 @@ int ValidateInputs(const Argon2_Context* context) {
             return ARGON2_AD_PTR_MISMATCH;
         }
     } else {
+        //ARGON2_MIN_AD_LENGTH, ARGON2_MAX_AD_LENGTH are 0 and one compiler make warnings
+        /*
         if (ARGON2_MIN_AD_LENGTH > context->adlen) {
             return ARGON2_AD_TOO_SHORT;
         }
         if (ARGON2_MAX_AD_LENGTH < context->adlen) {
             return ARGON2_AD_TOO_LONG;
-        }
+        }*/
     }
 
     /* Validate memory cost */
@@ -643,11 +653,11 @@ void FillFirstBlocks(uint8_t* blockhash, const Argon2_instance_t* instance) {
         store32(blockhash+ARGON2_PREHASH_DIGEST_LENGTH + 4,l);
 	
 	blake2b_long((uint8_t*) (tmp.v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
-	CopyBlock_g_map(instance->memory+MAP((l * instance->lane_length)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),&tmp);
+	CopyBlock_g_map((__global V*) instance->memory+MAP((l * instance->lane_length)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),(V*) &tmp);
         store32(blockhash+ARGON2_PREHASH_DIGEST_LENGTH,1);
 	
 	blake2b_long((uint8_t*) (tmp.v), blockhash, ARGON2_BLOCK_SIZE, ARGON2_PREHASH_SEED_LENGTH);
-	CopyBlock_g_map(instance->memory+MAP((l * instance->lane_length + 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),&tmp);
+	CopyBlock_g_map((__global V*) instance->memory+MAP((l * instance->lane_length + 1)*(ARGON2_WORDS_IN_BLOCK/Vsiz)),(V*) &tmp);
     }
 }
 
@@ -795,7 +805,10 @@ __kernel void argon2_crypt_kernel(
 	bool c_m=false;
 	bool pr=false;
 	
-	size_t mem_size, pseudo_rands_size;
+#if COALESCING == 0
+	size_t mem_size;
+#endif
+	size_t pseudo_rands_size;
 	uint32_t memory_blocks, segment_length;
 	
 	uint32_t hash_size=(uint32_t) salt->hash_size;
@@ -818,7 +831,9 @@ __kernel void argon2_crypt_kernel(
 	// Ensure that all segments have equal length
 	memory_blocks = segment_length * (lanes * ARGON2_SYNC_POINTS);
 
+#if COALESCING == 0
 	mem_size= sizeof(block)*memory_blocks;
+#endif
 	pseudo_rands_size=sizeof(uint64_t)*segment_length;
 				
 	
