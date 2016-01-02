@@ -62,7 +62,7 @@ void CopyBlock(void *dst_, const void* src_){
 
 void CopyBlock_g_map(__global V* dst, const V* src){
     int i,j;
-    for(i=0,j=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++,j+=MAP(1))//todo: opt
+    for(i=0,j=0; i<ARGON2_WORDS_IN_BLOCK/Vsiz; i++,j+=MAP(1))
       dst[j]=src[i];
 }
 
@@ -266,7 +266,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
     
     ulong2 t0,t1;
     
-#ifdef DS
+#if defined(DS) || !gpu_amd(DEVICE_INFO)
     uint64_t x = 0;
 #endif
 
@@ -278,7 +278,8 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
         block_XY[i] = state[i] = state[i] ^ block_XY[i];
     }
 
-#ifdef DS
+#if defined(DS) || !gpu_amd(DEVICE_INFO)
+    if(Sbox!=NULL){
         //x = _mm_extract_epi64(block_XY[0], 0) ^ _mm_extract_epi64(block_XY[ARGON2_QWORDS_IN_BLOCK - 1], 1);
         x = block_XY[0].s0 ^ block_XY[ARGON2_QWORDS_IN_BLOCK - 1].s1;
         for (i = 0; i < 6 * 16; ++i) {
@@ -290,6 +291,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
             x += y;
             x ^= z;
         }
+    }
 #endif
     
 
@@ -347,9 +349,11 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
         state[i] = state[i] ^ block_XY[i];
     }
     
-#ifdef DS
+#if defined(DS) || !gpu_amd(DEVICE_INFO)
+    if(Sbox!=NULL){
       state[0].x+=x;
       state[ARGON2_QWORDS_IN_BLOCK - 1].y+=x;
+    }
 #endif
     
     for (i = 0; i < ARGON2_WORDS_IN_BLOCK/Vsiz; i++) {
@@ -358,7 +362,7 @@ void FillBlock_g(ulong2* state, __global const uint8_t *ref_block, __global uint
     }
 }
 
-#ifdef I
+#if defined(I) || !gpu_amd(DEVICE_INFO)
 void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_t* position, __global uint64_t* pseudo_rands) {
     block zero_block, address_block,input_block;
     uint32_t i;
@@ -384,7 +388,7 @@ void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_
                 FillBlock((ulong2 *) & zero_block.v, (uint8_t *) & input_block.v, (uint8_t *) & address_block.v, NULL);
                 FillBlock((ulong2 *) & zero2_block.v, (uint8_t *) & address_block.v, (uint8_t *) & address_block.v, NULL);
             }
-            pseudo_rands[i] = address_block.v[i % ARGON2_ADDRESSES_IN_BLOCK];
+            pseudo_rands[MAP(i)] = address_block.v[i % ARGON2_ADDRESSES_IN_BLOCK];
         }
     }
 }
@@ -412,8 +416,10 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
    }*/
    
    
-#ifdef I
-   GenerateAddresses(instance, &position, pseudo_rands);
+#if defined(I) || !gpu_amd(DEVICE_INFO)
+   if (data_independent_addressing) {
+       GenerateAddresses(instance, &position, pseudo_rands);
+   }
 #endif
 
    starting_index = 0;
@@ -442,7 +448,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        /* 1.2 Computing the index of the reference block */
        /* 1.2.1 Taking pseudo-random value from the previous block */
        if (data_independent_addressing) {
-           pseudo_rand = pseudo_rands[i];
+           pseudo_rand = pseudo_rands[MAP(i)];
        } else {
 	   #if Vsiz > 1
 	   pseudo_rand = (instance->memory[MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz))]).s0;
@@ -806,9 +812,8 @@ __kernel void argon2_crypt_kernel(
 	bool pr=false;
 	
 #if COALESCING == 0
-	size_t mem_size;
+	size_t mem_size, pseudo_rands_size;
 #endif
-	size_t pseudo_rands_size;
 	uint32_t memory_blocks, segment_length;
 	
 	uint32_t hash_size=(uint32_t) salt->hash_size;
@@ -831,20 +836,16 @@ __kernel void argon2_crypt_kernel(
 	// Ensure that all segments have equal length
 	memory_blocks = segment_length * (lanes * ARGON2_SYNC_POINTS);
 
-#if COALESCING == 0
-	mem_size= sizeof(block)*memory_blocks;
-#endif
-	pseudo_rands_size=sizeof(uint64_t)*segment_length;
-				
-	
-
 #if COALESCING == 1
 	memory+=gid;
+	pseudo_rands+=gid;
 #else
+	mem_size= sizeof(block)*memory_blocks;
+	pseudo_rands_size=sizeof(uint64_t)*segment_length;
 	memory+=mem_size/sizeof(V)*gid;
+	pseudo_rands+=pseudo_rands_size/sizeof(ulong)*gid;
 #endif
 	
-	pseudo_rands+=pseudo_rands_size/sizeof(ulong)*gid;
 	if(salt->type==Argon2_ds)
 	   Sbox+=(sizeof(ulong)*ARGON2_SBOX_SIZE)/sizeof(ulong)*gid;
 	
