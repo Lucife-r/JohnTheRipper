@@ -41,15 +41,15 @@ john_register_one(&fmt_argon2ds);
 #define FORMAT_NAME			""
 
 #if defined(__XOP__)
-#define ALGORITHM_NAME			"Blake2 XOP"
+#define ALGORITHM_NAME			"Blake2 round Blamka XOP"
 #elif defined(__AVX__)
-#define ALGORITHM_NAME			"Blake2 AVX"
+#define ALGORITHM_NAME			"Blake2 round Blamka AVX"
 #elif defined(__SSSE3__)
-#define ALGORITHM_NAME			"Blake2 SSSE3"//todo: blake or blamka?
+#define ALGORITHM_NAME			"Blake2 round Blamka SSSE3"
 #elif defined(__SSE2__)
-#define ALGORITHM_NAME			"Blake2 SSE2"
+#define ALGORITHM_NAME			"Blake2 round Blamka SSE2"
 #else
-#define ALGORITHM_NAME			"Blake2"
+#define ALGORITHM_NAME			"Blake2 round Blamka"
 #endif
 
 #define BENCHMARK_COMMENT		""

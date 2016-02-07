@@ -14,7 +14,7 @@
 #include "opencl_misc.h"
 #include "opencl_string.h"
 
-#define COALESCING 1
+#define COALESCING 1  
 #define V ulong8
 #define Vsiz 8  //how many times V is bigger than V, this value must be changed if V is changed
 
@@ -396,6 +396,7 @@ void GenerateAddresses(const Argon2_instance_t* instance, const Argon2_position_
 
 
 void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) {
+  
    uint64_t pseudo_rand, ref_index, ref_lane;
    uint32_t prev_offset, curr_offset;
    ulong2 state[64];
@@ -410,11 +411,6 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
     
    // Pseudo-random values that determine the reference block position
    pseudo_rands = instance->pseudo_rands;
-   
-   /*if (pseudo_rands == NULL) {
-       return;
-   }*/
-   
    
 #if defined(I) || !gpu_amd(DEVICE_INFO)
    if (data_independent_addressing) {
@@ -437,6 +433,7 @@ void FillSegment(const Argon2_instance_t* instance, Argon2_position_t position) 
        prev_offset = curr_offset - 1;
    }  
    CopyBlock_pg_map((V*) state, (__global V*) ((instance->memory + MAP(prev_offset*(ARGON2_WORDS_IN_BLOCK/Vsiz)))));
+   
    for (i = starting_index; i < instance->segment_length; ++i, ++curr_offset, ++prev_offset) {
        __global V *ref_block, *curr_block;
        /*1.1 Rotating prev_offset if needed */
@@ -514,25 +511,34 @@ void Finalize(const Argon2_Context *context, Argon2_instance_t* instance) {
     }
 }
 
-void FillMemoryBlocks(Argon2_instance_t* instance) {
+void FillMemoryBlocks(Argon2_instance_t* instance, __global Argon2_split_position_t* split) {
     uint32_t r;
     if (instance == NULL) {
         return;
     }
-    for (r = 0; r < instance->passes; ++r) {
-        uint8_t s;
-        if (Argon2_ds == instance->type) {
-            GenerateSbox(instance);
-        }
-        for (s = 0; s < ARGON2_SYNC_POINTS; ++s) {
-            uint32_t l;
+    uint32_t l;
+	    
+    if(split->sync_point==0 && Argon2_ds == instance->type) {
+	 GenerateSbox(instance);
+    }
+	      
 
-            for (l = 0; l < instance->lanes; ++l) {
-                Argon2_position_t position = {r,l,s,0};
+    for (l = 0; l < instance->lanes; ++l) {
+         //Argon2_position_t position = {r,l,s,0};
+	 Argon2_position_t position = {split->pass,l,split->sync_point,0};
 
-                FillSegment(instance, position);
-            }
-        }
+         FillSegment(instance, position);
+    }
+    
+    //split++
+    if(get_global_id(0)==0)
+    {
+	split->sync_point++;
+	if(split->sync_point>=ARGON2_SYNC_POINTS)
+	{
+	  split->sync_point=0;
+	  split->pass++;
+	}
     }
 }
 
@@ -541,9 +547,9 @@ int ValidateInputs(const Argon2_Context* context) {
         return ARGON2_INCORRECT_PARAMETER;
     }
 
-    if (NULL == context->out) {
+    /*if (NULL == context->out) {
         return ARGON2_OUTPUT_PTR_NULL;
-    }
+    }*/
 
     /* Validate output length */
     if (ARGON2_MIN_OUTLEN > context->outlen) {
@@ -638,12 +644,8 @@ int ValidateInputs(const Argon2_Context* context) {
         return ARGON2_LANES_TOO_MANY;
     }
     
-    /* Validate threads */
-    if (ARGON2_MIN_THREADS > context->threads) {
-        return ARGON2_THREADS_TOO_FEW;
-    }
-    if (ARGON2_MAX_THREADS < context->threads) {
-        return ARGON2_THREADS_TOO_MANY;
+    if (Argon2_d != context->type && Argon2_i != context->type && Argon2_id != context->type && Argon2_ds != context->type) {
+        return ARGON2_INCORRECT_TYPE;
     }
 
     return ARGON2_OK;
@@ -728,9 +730,6 @@ int Initialize(Argon2_instance_t* instance, Argon2_Context* context) {
     if (instance == NULL || context == NULL)
         return ARGON2_INCORRECT_PARAMETER;
 
-    instance->memory=context->memory;
-
-
     if (ARGON2_OK != result) {
         return result;
     }
@@ -741,21 +740,21 @@ int Initialize(Argon2_instance_t* instance, Argon2_Context* context) {
     return ARGON2_OK;
 }
 
-int Argon2Core(Argon2_Context* context, Argon2_type type) {
+void InstanceInitialize(Argon2_Context* context, Argon2_instance_t *instance)
+{
     uint32_t segment_length;
     uint32_t memory_blocks;
-    /* 1. Validate all inputs */
-    int result = ValidateInputs(context);
-    Argon2_instance_t instance = { NULL, context->t_cost, 0, 0, 
-        0, context->lanes, context->threads, type, NULL, 0};
-
-    if (ARGON2_OK != result) {
-        return result;
-    }
-    if (Argon2_d != type && Argon2_i != type && Argon2_id != type && Argon2_ds != type) {
-        return ARGON2_INCORRECT_TYPE;
-    }
-
+    
+    instance->memory=context->memory;
+    instance->passes=context->t_cost;
+    instance->memory_blocks=0;
+    instance->segment_length=0;
+    instance->lane_length=0;
+    instance->lanes=context->lanes;
+    instance->Sbox=context->Sbox;
+    instance->pseudo_rands=context->pseudo_rands;
+    instance->type=context->type;
+	
     /* 2. Align memory size */
     // Minimum memory_blocks = 8L blocks, where L is the number of lanes
     memory_blocks = context->m_cost;
@@ -766,10 +765,21 @@ int Argon2Core(Argon2_Context* context, Argon2_type type) {
     // Ensure that all segments have equal length
     memory_blocks = segment_length * (context->lanes * ARGON2_SYNC_POINTS);
 
-    instance.memory_blocks=memory_blocks;
-    instance.segment_length=segment_length;
-    instance.lane_length=segment_length * ARGON2_SYNC_POINTS;
+    instance->memory_blocks=memory_blocks;
+    instance->segment_length=segment_length;
+    instance->lane_length=segment_length * ARGON2_SYNC_POINTS;
+}
+
+int Argon2Initialize(Argon2_Context* context, Argon2_type type) {
+    Argon2_instance_t instance;
+    /* 1. Validate all inputs */
+    int result = ValidateInputs(context);
+
+    if (ARGON2_OK != result) {
+        return result;
+    }
     
+    InstanceInitialize(context, &instance);
 
     /* 3. Initialization: Hashing inputs, allocating memory, filling first blocks */
     result = Initialize(&instance, context);
@@ -777,25 +787,41 @@ int Argon2Core(Argon2_Context* context, Argon2_type type) {
         return result;
     }
     
-    instance.pseudo_rands=(__global uint64_t*)context->pseudo_rands;
-    instance.Sbox=(__global uint64_t*)context->Sbox;
-    
+    return ARGON2_OK;
+}
+
+int Argon2Main(Argon2_Context* context, Argon2_type type, __global Argon2_split_position_t* split) {
+  
+    Argon2_instance_t instance;
+  
+    InstanceInitialize(context, &instance);
+      
     /* 4. Filling memory */
-    FillMemoryBlocks(&instance);
+    FillMemoryBlocks(&instance, split);
+
+    return ARGON2_OK;
+}
+
+int Argon2Finalize(Argon2_Context* context, Argon2_type type) {
+
+    Argon2_instance_t instance;
+	
+    InstanceInitialize(context, &instance);
+    
     /* 5. Finalization */
     Finalize(context, &instance);
     return ARGON2_OK;
 }
-
-
-__kernel void argon2_crypt_kernel(
+ 
+__kernel void argon2_crypt_kernel_init(
     __global const uchar * in,
     __global const uint * lengths,
     __global uchar *out,
     __global struct argon2_salt *salt,
     __global V *memory,
     __global ulong *pseudo_rands,
-    __global ulong *Sbox
+    __global ulong *Sbox,
+    __global Argon2_split_position_t *split
 )
 {
 	int i;
@@ -806,10 +832,6 @@ __kernel void argon2_crypt_kernel(
 	uint8_t* default_secret_ptr = NULL;
 	uint32_t default_secret_length = 0;
 	uint8_t default_parallelism = 1;
-	bool c_p=false;
-	bool c_s=false;
-	bool c_m=false;
-	bool pr=false;
 	
 #if COALESCING == 0
 	size_t mem_size, pseudo_rands_size;
@@ -825,7 +847,6 @@ __kernel void argon2_crypt_kernel(
 	uint32_t inlen = lengths[gid];
 	
 	in += gid*PLAINTEXT_LENGTH;
-	out += gid * BINARY_SIZE;
 	
 	//computing memory size
 	memory_blocks = m_cost;
@@ -858,21 +879,161 @@ __kernel void argon2_crypt_kernel(
 	for(i=0;i<inlen;i++)
 	  pass[i]=in[i];
 	
-	uchar out_[BINARY_SIZE];
 	
-
-	Argon2_Context context = {(uint8_t*) out_, hash_size,
+	Argon2_Context context = {NULL, hash_size,
             (uint8_t*) pass, (uint32_t) inlen,
             (uint8_t*) real_salt, salt_length,
             default_ad_ptr, default_ad_length,
             default_secret_ptr, default_secret_length,
-            t_cost, m_cost, lanes, default_parallelism,
-	c_p,c_s,c_m,pr, memory, Sbox, pseudo_rands};
-	Argon2Core(&context, salt->type);
+            t_cost, m_cost, lanes,
+	    memory, Sbox, pseudo_rands, salt->type};
+	
+	Argon2Initialize(&context, salt->type);
+	
+	if(gid==0)
+	{
+	  split->pass=0;
+	  split->sync_point=0;
+	}
+}
+
+__kernel void argon2_crypt_kernel_main(
+    __global const uchar * in,
+    __global const uint * lengths,
+    __global uchar *out,
+    __global struct argon2_salt *salt,
+    __global V *memory,
+    __global ulong *pseudo_rands,
+    __global ulong *Sbox,
+    __global Argon2_split_position_t *split
+)
+{
+	int i;
+	uint gid = get_global_id(0);
+	
+  	uint8_t* default_ad_ptr = NULL;
+	uint32_t default_ad_length = 0;
+	uint8_t* default_secret_ptr = NULL;
+	uint32_t default_secret_length = 0;
+	uint8_t default_parallelism = 1;
+	
+#if COALESCING == 0
+	size_t mem_size, pseudo_rands_size;
+#endif
+	uint32_t memory_blocks, segment_length;
+	
+	uint32_t hash_size=(uint32_t) salt->hash_size;
+	uint32_t m_cost=salt->m_cost;
+	uint32_t t_cost=salt->t_cost;
+	uint32_t lanes=salt->lanes;
+	uint32_t salt_length=salt->salt_length;
+	
+	uint32_t inlen = 0;
+	
+	//computing memory size
+	memory_blocks = m_cost;
+	if (memory_blocks < 2 * ARGON2_SYNC_POINTS * lanes) {
+	  memory_blocks = 2 * ARGON2_SYNC_POINTS * lanes;
+	}
+	segment_length = memory_blocks / (lanes * ARGON2_SYNC_POINTS);
+	// Ensure that all segments have equal length
+	memory_blocks = segment_length * (lanes * ARGON2_SYNC_POINTS);
+
+#if COALESCING == 1
+	memory+=gid;
+	pseudo_rands+=gid;
+#else
+	mem_size= sizeof(block)*memory_blocks;
+	pseudo_rands_size=sizeof(uint64_t)*segment_length;
+	memory+=mem_size/sizeof(V)*gid;
+	pseudo_rands+=pseudo_rands_size/sizeof(ulong)*gid;
+#endif
+	
+	if(salt->type==Argon2_ds)
+	   Sbox+=(sizeof(ulong)*ARGON2_SBOX_SIZE)/sizeof(ulong)*gid;
+
+	Argon2_Context context = {NULL, hash_size,
+            NULL, (uint32_t) inlen,
+            NULL, salt_length,
+            default_ad_ptr, default_ad_length,
+            default_secret_ptr, default_secret_length,
+            t_cost, m_cost, lanes,
+	    memory, Sbox, pseudo_rands,salt->type};
+	
+	Argon2Main(&context, salt->type, split);
+}
+
+__kernel void argon2_crypt_kernel_end(
+    __global const uchar * in,
+    __global const uint * lengths,
+    __global uchar *out,
+    __global struct argon2_salt *salt,
+    __global V *memory,
+    __global ulong *pseudo_rands,
+    __global ulong *Sbox,
+    __global Argon2_split_position_t *split
+)
+{
+	int i;
+	uint gid = get_global_id(0);
+	
+  	uint8_t* default_ad_ptr = NULL;
+	uint32_t default_ad_length = 0;
+	uint8_t* default_secret_ptr = NULL;
+	uint32_t default_secret_length = 0;
+	uint8_t default_parallelism = 1;
+	
+#if COALESCING == 0
+	size_t mem_size, pseudo_rands_size;
+#endif
+	uint32_t memory_blocks, segment_length;
+	
+	uint32_t hash_size=(uint32_t) salt->hash_size;
+	uint32_t m_cost=salt->m_cost;
+	uint32_t t_cost=salt->t_cost;
+	uint32_t lanes=salt->lanes;
+	uint32_t salt_length=salt->salt_length;
+	
+	uint32_t inlen = lengths[gid];
+	
+	out += gid * BINARY_SIZE;
+	
+	//computing memory size
+	memory_blocks = m_cost;
+	if (memory_blocks < 2 * ARGON2_SYNC_POINTS * lanes) {
+	  memory_blocks = 2 * ARGON2_SYNC_POINTS * lanes;
+	}
+	segment_length = memory_blocks / (lanes * ARGON2_SYNC_POINTS);
+	// Ensure that all segments have equal length
+	memory_blocks = segment_length * (lanes * ARGON2_SYNC_POINTS);
+
+#if COALESCING == 1
+	memory+=gid;
+	pseudo_rands+=gid;
+#else
+	mem_size= sizeof(block)*memory_blocks;
+	pseudo_rands_size=sizeof(uint64_t)*segment_length;
+	memory+=mem_size/sizeof(V)*gid;
+	pseudo_rands+=pseudo_rands_size/sizeof(ulong)*gid;
+#endif
+	
+	if(salt->type==Argon2_ds)
+	   Sbox+=(sizeof(ulong)*ARGON2_SBOX_SIZE)/sizeof(ulong)*gid;
+	
+	uchar out_[BINARY_SIZE];
+	
+
+	Argon2_Context context = {(uint8_t*) out_, hash_size,
+            NULL, (uint32_t) inlen,
+            NULL, salt_length,
+            default_ad_ptr, default_ad_length,
+            default_secret_ptr, default_secret_length,
+            t_cost, m_cost, lanes,
+	    memory, Sbox, pseudo_rands, salt->type};
+	Argon2Finalize(&context, salt->type);
 	
 	for(i=0;i<hash_size;i++)
 	{
 	  out[i]=out_[i];
 	}
 }
- 

@@ -41,7 +41,7 @@ john_register_one(&fmt_opencl_argon2ds);
 #define FORMAT_LABEL_ds			"argon2ds-opencl"
 #define FORMAT_NAME			""
 
-#define ALGORITHM_NAME			"Blake2 OpenCL"//todo: this is Blake or Blamka?
+#define ALGORITHM_NAME			"Blake2 round Blamka OpenCL"
 
 #define BENCHMARK_COMMENT		""
 #define BENCHMARK_LENGTH		0
@@ -117,7 +117,7 @@ struct argon2_salt {
 struct argon2_salt * saved_salt;
 static char *saved_key;
 static unsigned int *saved_lengths;
-static cl_mem cl_saved_key, cl_saved_lengths, cl_result, cl_saved_salt, cl_memory, cl_pseudo_rands, cl_sbox;
+static cl_mem cl_saved_key, cl_saved_lengths, cl_result, cl_saved_salt, cl_memory, cl_pseudo_rands, cl_sbox, cl_split;
 static cl_mem pinned_key, pinned_lengths, pinned_result, pinned_salt;
 static char *output;
 static uint64_t MEM_SIZE, PSEUDO_RANDS_SIZE;
@@ -126,6 +126,8 @@ static int clobj_allocated;
 static uint saved_gws;
 
 static struct fmt_main *self;
+cl_kernel argon2_init, argon2_main, argon2_end;
+static int split_events[3] = {4, -1, -1};
 
 int DS, I;
 
@@ -134,7 +136,11 @@ static void *get_salt(char *ciphertext);
 /* ------- Helper functions ------- */
 static size_t get_task_max_work_group_size()
 {
-	return autotune_get_task_max_work_group_size(FALSE, 0, crypt_kernel);
+	size_t max_work_group;
+	max_work_group=autotune_get_task_max_work_group_size(FALSE, 0, argon2_init);
+	max_work_group=MIN(max_work_group,autotune_get_task_max_work_group_size(FALSE, 0, argon2_main));
+	max_work_group=MIN(max_work_group,autotune_get_task_max_work_group_size(FALSE, 0, argon2_end));
+	return max_work_group;
 }
 
 static void release_clobj(void)
@@ -159,6 +165,9 @@ static void release_clobj(void)
 	HANDLE_CLERROR(clReleaseMemObject(cl_saved_lengths), "Release index buffer");
 
 	HANDLE_CLERROR(clReleaseMemObject(cl_memory), "Release memory buffer");
+	
+	HANDLE_CLERROR(clReleaseMemObject(cl_split), "Release memory for splitting");
+	
 	if(I)
 	  HANDLE_CLERROR(clReleaseMemObject(cl_pseudo_rands), "Release memory buffer");
 	if(DS)
@@ -203,6 +212,10 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 
 	cl_memory = clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE, MEM_SIZE * gws, NULL, &ret_code);
 	HANDLE_CLERROR(ret_code, "Error mapping memory");
+	
+	cl_split = clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE, sizeof(Argon2_split_position_t), NULL, &ret_code);
+	HANDLE_CLERROR(ret_code, "Error mapping memory for splitting");
+	
 	if(I)
 	{
 	  cl_pseudo_rands = clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE, PSEUDO_RANDS_SIZE * gws, NULL, &ret_code);
@@ -213,29 +226,37 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	   cl_sbox = clCreateBuffer(context[gpu_id], CL_MEM_READ_WRITE, (sizeof(uint64_t)*ARGON2_SBOX_SIZE) * gws, NULL, &ret_code);
 	   HANDLE_CLERROR(ret_code, "Error mapping sbox");
 	}
+	
+	#define set_args(NAME) \
+	HANDLE_CLERROR(clSetKernelArg(NAME, 0, sizeof(cl_mem),		\
+		(void *)&cl_saved_key), "Error setting argument 0");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 1, sizeof(cl_mem),		\
+		(void *)&cl_saved_lengths), "Error setting argument 1");\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 2, sizeof(cl_mem),		\
+		(void *)&cl_result), "Error setting argument 2");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 3, sizeof(cl_mem),		\
+		(void *)&cl_saved_salt), "Error setting argument 3");	\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 4, sizeof(cl_mem),		\
+		(void *)&cl_memory), "Error setting argument 4");	\
+	if(I)								\
+	  HANDLE_CLERROR(clSetKernelArg(NAME, 5, sizeof(cl_mem),	\
+		(void *)&cl_pseudo_rands), "Error setting argument 5"); \
+	else								\
+	  HANDLE_CLERROR(clSetKernelArg(NAME, 5, sizeof(cl_mem),	\
+		NULL), "Error setting argument 5");			\
+	if(DS)								\
+	  HANDLE_CLERROR(clSetKernelArg(NAME, 6, sizeof(cl_mem),	\
+		(void *)&cl_sbox), "Error setting argument 6");		\
+	else								\
+	  HANDLE_CLERROR(clSetKernelArg(NAME, 6, sizeof(cl_mem),	\
+		NULL), "Error setting argument 6");			\
+									\
+	HANDLE_CLERROR(clSetKernelArg(NAME, 7, sizeof(cl_mem),		\
+		(void *)&cl_split), "Error setting argument 7");	
 
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 0, sizeof(cl_mem),
-		(void *)&cl_saved_key), "Error setting argument 0");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 1, sizeof(cl_mem),
-		(void *)&cl_saved_lengths), "Error setting argument 1");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 2, sizeof(cl_mem),
-		(void *)&cl_result), "Error setting argument 2");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 3, sizeof(cl_mem),
-		(void *)&cl_saved_salt), "Error setting argument 3");
-	HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 4, sizeof(cl_mem),
-		(void *)&cl_memory), "Error setting argument 4");
-	if(I)
-	  HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 5, sizeof(cl_mem),
-		(void *)&cl_pseudo_rands), "Error setting argument 5");
-	else
-	  HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 5, sizeof(cl_mem),
-		NULL), "Error setting argument 5");
-	if(DS)
-	  HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 6, sizeof(cl_mem),
-		(void *)&cl_sbox), "Error setting argument 6");
-	else
-	  HANDLE_CLERROR(clSetKernelArg(crypt_kernel, 6, sizeof(cl_mem),
-		NULL), "Error setting argument 6");
+	set_args(argon2_init)
+	set_args(argon2_main)
+	set_args(argon2_end)
 }
 
 static void done(void)
@@ -244,7 +265,9 @@ static void done(void)
 	{
 		release_clobj();
 
-		HANDLE_CLERROR(clReleaseKernel(crypt_kernel), "Release kernel");
+		HANDLE_CLERROR(clReleaseKernel(argon2_init), "Release kernel argon2_init");
+		HANDLE_CLERROR(clReleaseKernel(argon2_main), "Release kernel argon2_main");
+		HANDLE_CLERROR(clReleaseKernel(argon2_end), "Release kernel argon2_end");
 		HANDLE_CLERROR(clReleaseProgram(program[gpu_id]), "Release Program");
 	}
 }
@@ -272,8 +295,18 @@ static void reset_(uint64_t mem_size, uint64_t pseudo_rands)
 
 
 	// create kernel to execute
-	crypt_kernel =
-	    clCreateKernel(program[gpu_id], "argon2_crypt_kernel", &ret_code);
+	argon2_init =
+	    clCreateKernel(program[gpu_id], "argon2_crypt_kernel_init", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
+	
+	argon2_main =
+	    clCreateKernel(program[gpu_id], "argon2_crypt_kernel_main", &ret_code);
+	HANDLE_CLERROR(ret_code,
+	    "Error creating kernel. Double-check kernel name?");
+	
+	argon2_end =
+	    clCreateKernel(program[gpu_id], "argon2_crypt_kernel_end", &ret_code);
 	HANDLE_CLERROR(ret_code,
 	    "Error creating kernel. Double-check kernel name?");
 
@@ -284,10 +317,15 @@ static void reset_(uint64_t mem_size, uint64_t pseudo_rands)
 	  size+=PSEUDO_RANDS_SIZE;
 	if(DS)
 	  size+=sizeof(uint64_t)*ARGON2_SBOX_SIZE;
-
+	
+	if(gpu_nvidia(device_info[gpu_id])) //nvidia returns 4 times lower size than can allocate
+	  size=size/4;
+	
 	//Initialize openCL tuning (library) for this format.
-	opencl_init_auto_setup(SEED, 0, NULL,
+	opencl_init_auto_setup(SEED, 1, split_events,
 	    warn, 4, self, create_clobj, release_clobj, size, 0);
+	
+	crypt_kernel=argon2_main;//todo: temporary solution
 
 	//Auto tune execution from shared/included code.
 	autotune_run(self, 1, 0, 1000);
@@ -657,6 +695,9 @@ static int cmp_exact(char *source, int index)
 
 static int crypt_all(int *pcount, struct db_salt *salt)
 {
+	uint32_t r;
+	uint8_t s;
+	
 	const int count = *pcount;
 	size_t *lws = local_work_size ? &local_work_size : NULL;
 
@@ -679,16 +720,27 @@ static int crypt_all(int *pcount, struct db_salt *salt)
 		saved_lengths, 0, NULL, multi_profilingEvent[2]), "Failed transferring index");
 
 
-	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], crypt_kernel, 1,
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], argon2_init, 1,
 		NULL, &global_work_size, lws, 0, NULL,
 		multi_profilingEvent[3]), "failed in clEnqueueNDRangeKernel");
-
+	
+	for (r = 0; r < saved_salt->t_cost; ++r)
+        for (s = 0; s < ARGON2_SYNC_POINTS; ++s) {
+	    HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], argon2_main, 1,
+		    NULL, &global_work_size, lws, 0, NULL,
+		    multi_profilingEvent[4]), "failed in clEnqueueNDRangeKernel");
+	    
+	    opencl_process_event();
+	}
+	
+	HANDLE_CLERROR(clEnqueueNDRangeKernel(queue[gpu_id], argon2_end, 1,
+		NULL, &global_work_size, lws, 0, NULL,
+		multi_profilingEvent[5]), "failed in clEnqueueNDRangeKernel");
 
 	// read back
 	HANDLE_CLERROR(clEnqueueReadBuffer(queue[gpu_id], cl_result, CL_TRUE,
 		0, BINARY_SIZE * count, output, 0, NULL,
-		multi_profilingEvent[4]), "failed in reading data back");
-
+		multi_profilingEvent[6]), "failed in reading data back");
 
 	return count;
 }

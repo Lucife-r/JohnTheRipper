@@ -48,10 +48,8 @@ typedef struct _Argon2_instance_t {
     uint32_t segment_length;
     uint32_t lane_length;
     uint32_t lanes;
-    uint32_t threads;
     Argon2_type type;
     __global uint64_t *Sbox; //S-boxes for Argon2_ds
-    bool print_internals;  //whether to print the memory blocks
     __global uint64_t *pseudo_rands;
 }Argon2_instance_t;
 
@@ -67,7 +65,13 @@ typedef struct _Argon2_position_t {
 }Argon2_position_t;
 
 
-//file argon2.h
+/*
+ * Argon2 split position: where we construct the block right now. Used to distribute work between threads. //todo
+ */
+typedef struct _Argon2_split_position_t {
+    uint32_t pass;
+    uint32_t sync_point;
+}Argon2_split_position_t;
 
 /*************************Argon2 input parameter restrictions**************************************************/
 
@@ -208,17 +212,12 @@ typedef struct _Argon2_Context {
     const uint32_t t_cost; //number of passes
     const uint32_t m_cost; //amount of memory requested (KB)
     const uint32_t lanes; //number of lanes
-    const uint32_t threads; //maximum number of threads
-
-    const bool clear_password; //whether to clear the password array
-    const bool clear_secret; //whether to clear the secret array
-    const bool clear_memory; //whether to clear the memory after the run
-    
-    const bool print; //whether to print starting variables, memory blocks, and the tag to the file -- Test vectors only!
     
     __global void *memory;
     __global void *Sbox;
     __global void *pseudo_rands;
+    
+    Argon2_type type;
 } Argon2_Context;
 
 

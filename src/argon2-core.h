@@ -93,6 +93,11 @@ typedef struct _Argon2_position_t {
     uint32_t index;
 }Argon2_position_t;
 
+typedef struct _Argon2_split_position_t {
+    uint32_t pass;
+    uint32_t sync_point;
+}Argon2_split_position_t;
+
 /*Macro for endianness conversion*/
 
 #if defined(_MSC_VER) 
