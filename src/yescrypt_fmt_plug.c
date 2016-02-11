@@ -83,16 +83,12 @@ struct yescrypt_salt {
 };
 
 static struct fmt_tests tests[] = {
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$ZoMvPuaKOKqV3K2xNz3pPp.cWOIYJICPLdp6EFsv5Z0","pleaseletmein"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$B28ZRktp61jee8VLhEOszvUak579EOfjz/bm1AkXUTC","x-men"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$gZ.es2fD1WJAqx5ioo6ZqERrWYzP8iH0uOsUCUJ9lVA","NSA"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$XqyoZHZjZ3KCuNUW4NP/WgG/aAv7jhvp19cSWYJPa86","keyboard"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$etMpFbzahhNbJ0UPlAESnepEdKjs5VqpbpMEZyl.7H/","spiderman"},
-	{"#local param#262144#8#8$0$0$7X$96....9....WZaPV7LSUEKMo34.$UcNa7Ee718f3x5cu4sdUK.VTVisbzjb/NPtUGJJlZb5","shared"},//rom
-	//{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
-	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs*/
+	{"$0$0$7$C6..../....SodiumChloride$kBGj9fHznVYFQMEn/qDCfrDevf9YDtcDdKvEqHJLV8D","pleaseletmein"},
+	{"$0$0$7X$E6....9....WZaPV7LSUEKMo34.$PLIHOotu/59CDcoCpDKSeAfZfpS.Y6LnUxuG/SX/uz5","pleaseletmein2"},
+	{"#local param#262144#8#8$0$0$7X$96....9....WZaPV7LSUEKMo34.$Sbx7r7KyIBQ5Nua1L/2NSihYgoSV1GlMOS0oATFwPu2","shared"},//rom
 	{NULL}
 };
+
 
 extern int decode64_one(uint32_t * dst, uint8_t src);
 extern const uint8_t * decode64_uint32(uint32_t * dst, uint32_t dstbits,
@@ -341,11 +337,9 @@ static int valid(char *ciphertext, struct fmt_main *self)
 		if (N / p <= 3) {
 			return 0;
 		}
-#if SIZE_MAX / Sbytes < 4294967295
-		if (p > SIZE_MAX / Sbytes) {
+		if (p > SIZE_MAX / Salloc) {
 			return 0;
 		}
-#endif
 	}
 
 #else
@@ -361,11 +355,9 @@ static int valid(char *ciphertext, struct fmt_main *self)
 		if ((flags & YESCRYPT_WORM) || (N / p <= 1) || (r < rmin)) {
 			return 0;
 		}
-#if SIZE_MAX / Sbytes < 4294967295
-		if (p > SIZE_MAX / Sbytes) {
+		if (p > SIZE_MAX / Salloc) {
 			return 0;
 		}
-#endif
 	}
 
 #endif

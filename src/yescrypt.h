@@ -45,9 +45,16 @@
 
 /* Derived values.  Not tunable except via Swidth above. */
 #define PWXbytes (PWXgather * PWXsimple * 8)
-#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
+#define Sbytes (3 * (1 << Swidth) * PWXsimple * 8)
 #define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
 #define Smask2 (((uint64_t)Smask << 32) | Smask)
+
+#define Salloc (Sbytes + ((sizeof(pwxform_ctx_t) + 63) & ~63U))
+
+typedef struct {
+	uint8_t *S0, *S1, *S2;
+	size_t w;
+} pwxform_ctx_t;
 
 #else
 
@@ -59,8 +66,7 @@
 
 /* Derived values.  Not tunable on their own. */
 #define PWXbytes (PWXgather * PWXsimple * 8)
-#define PWXwords (PWXbytes / sizeof(ulong))
-#define Sbytes (2 * (1 << Swidth) * PWXsimple * 8)
+#define PWXwords (PWXbytes / sizeof(uint64_t))
 #define Swords (Sbytes / sizeof(uint64_t))
 #define Smask (((1 << Swidth) - 1) * PWXsimple * 8)
 #define Smask2 (((uint64_t)Smask << 32) | Smask)
@@ -69,6 +75,15 @@
 #if PWXbytes % 32 != 0
 #error "blkcpy() and blkxor() currently work on multiples of 32."
 #endif
+
+#define Sbytes (3 * (1 << Swidth) * PWXsimple * 8)
+
+#define Salloc (Sbytes + ((sizeof(pwxform_ctx_t) + 63) & ~63U))
+
+typedef struct {
+	uint64_t *S0, *S1, *S2;
+	size_t w;
+} pwxform_ctx_t;
 
 #endif
 
