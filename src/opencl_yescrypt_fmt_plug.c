@@ -20,7 +20,6 @@ john_register_one(&fmt_opencl_yescrypt);
 #include "options.h"
 #include "formats.h"
 #include "common-opencl.h"
-#include "yescrypt.h"
 #include "opencl_yescrypt.h"
 
 #define FORMAT_LABEL            "yescrypt-opencl"
@@ -82,14 +81,8 @@ struct yescrypt_salt {
 
 
 static struct fmt_tests tests[] = {
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$ZoMvPuaKOKqV3K2xNz3pPp.cWOIYJICPLdp6EFsv5Z0","pleaseletmein"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$B28ZRktp61jee8VLhEOszvUak579EOfjz/bm1AkXUTC","x-men"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$gZ.es2fD1WJAqx5ioo6ZqERrWYzP8iH0uOsUCUJ9lVA","NSA"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34$XqyoZHZjZ3KCuNUW4NP/WgG/aAv7jhvp19cSWYJPa86","keyboard"},
-	{"$0$0$7X$96....9....WZaPV7LSUEKMo34.$etMpFbzahhNbJ0UPlAESnepEdKjs5VqpbpMEZyl.7H/","spiderman"},
-	{"#local param#262144#8#8$0$0$7X$96....9....WZaPV7LSUEKMo34.$UcNa7Ee718f3x5cu4sdUK.VTVisbzjb/NPtUGJJlZb5","shared"},//rom
-	//{"$1$1$7X$96....9....WZaPV7LSUEKMo34.$PIeIJHhlVeIEcM3.sIuIH85KdkqPPNCfZ3WJdTKpY81","spiderman"},
-	//{"$1$1$7X$20....1....WZaPV7LSUEKMo34.$k4f1WRjcD7h/k1cO.D6IbsmUkeKATc9JsVtRLmxneFD","pleaseletmein"},//<-very low costs*/
+        {"$0$0$7X0$80....6....WZaPV7LSUEKMo34.$ExarACF8oYGXbG8AMCQ9PFOAuHD4cJR1jrX/cfCaMM6","pleaseletmein2"},
+	{"$0$0$7$C6..../....SodiumChloride$kBGj9fHznVYFQMEn/qDCfrDevf9YDtcDdKvEqHJLV8D","pleaseletmein"},
 	{NULL}
 };
 
@@ -151,7 +144,7 @@ static void create_clobj(size_t gws, struct fmt_main *self)
 	uint64_t V_size=128*r*(N<<(g*2));
 	uint64_t B_size=128*r*p;
 	uint64_t XY_size=256*r+64;
-	uint64_t S_size=Sbytes * p;
+	uint64_t S_size=(Salloc_+100) * p;
 
 	if (clobj_allocated)
 		release_clobj();
@@ -445,12 +438,14 @@ static int valid(char *ciphertext, struct fmt_main *self)
 {
 	int i;
 	uint64_t N;
-	uint32_t r, p, t;
+	uint32_t r, p;
 	size_t prefixlen, saltlen, need;
 	const char *src, *salt;
 	struct yescrypt_salt * tmp_salt;
 	yescrypt_flags_t flags;
-	char *dollar=ciphertext;
+	char *dollar=strchr(ciphertext,'$');
+	if(dollar==NULL)
+		return 0;
 	for(i=0;i<2;i++){
 		dollar=strchr(dollar,'$');
 		if(dollar==NULL)
@@ -511,24 +506,26 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	if(saltlen>sizeof(saved_salt->salt))
 		return 0;
 
-	/* Sanity-check parameters */
 	tmp_salt=(struct yescrypt_salt *)get_salt(ciphertext);
 	flags=tmp_salt->flags;
 	N=tmp_salt->N;
 	r=tmp_salt->r;
 	p=tmp_salt->p;
-	t=tmp_salt->t;
 
-	if ((flags & ~YESCRYPT_KNOWN_FLAGS) || (!flags && t)) {
+	/* Sanity-check parameters */
+	if ((flags & ~YESCRYPT_KNOWN_FLAGS)) {
 		return 0;
 	}
 
-	if ((uint64_t)(r) * (uint64_t)(p) >= (1 << 30)) {
+	if ((uint64_t)(r) * (uint64_t)(p) >= (1 << 30))
 		return 0;
-	}
-	if (((N & (N - 1)) != 0) || (N <= 1) || (r < 1) || (p < 1)) {
+
+	if (N > UINT64_MAX / ((uint64_t)tmp_salt->t + 1))
 		return 0;
-	}
+
+	if (((N & (N - 1)) != 0) || (N <= 1) || (r < 1) || (p < 1))
+		return 0;
+
 	if ((p > SIZE_MAX / ((size_t)256 * r + 64)) ||
 #if SIZE_MAX / 256 <= UINT32_MAX
 	    (r > SIZE_MAX / 256) ||
@@ -536,20 +533,13 @@ static int valid(char *ciphertext, struct fmt_main *self)
 	    (N > SIZE_MAX / 128 / r)) {
 		return 0;
 	}
-	if (N > UINT64_MAX / ((uint64_t)t + 1)) {
-		return 0;
-	}
+
 	if (flags & YESCRYPT_RW) {
 		if ((flags & YESCRYPT_WORM) || (N / p <= 1) || (r < rmin)) {
 			return 0;
 		}
-#if SIZE_MAX / Sbytes < 4294967295
-		if (p > SIZE_MAX / Sbytes) {
-			return 0;
-		}
-#endif
 	}
-
+	
 	return 1;
 }
 

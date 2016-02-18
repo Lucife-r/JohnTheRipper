@@ -1031,7 +1031,7 @@ yescrypt_kdf(const yescrypt_shared_t * shared, yescrypt_local_t * local,
 		N <<= 2;
 		if (!N)
 			return -1;
-		t = 0;
+		t >>= 1;
 	} while (g--);
 
 	return 0;
